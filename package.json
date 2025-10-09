@@ -1,0 +1,19 @@
+{
+  "name": "promptdevkit-web",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": "^20.0.0",
+    "pnpm": "^9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --if-present dev",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "format": "pnpm -r --if-present format",
+    "preview": "pnpm -r --if-present preview"
+  }
+}
