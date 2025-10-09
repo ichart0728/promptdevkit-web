@@ -1,0 +1,28 @@
+project_id = "promptdevkit-web"
+
+[api]
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54323
+major_version = 15
+
+[studio]
+port = 54324
+
+[inbucket]
+port = 54325
+
+[storage]
+port = 54326
+
+[edge_runtime]
+port = 54327
+
+[analytics]
+port = 54328
+backend = "postgres"
