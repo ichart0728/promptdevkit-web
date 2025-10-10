@@ -48,6 +48,7 @@
    - `supabase db push` は **リンク済みのリモートプロジェクト専用** です。ローカル環境では `Cannot find project ref` エラーになるため、`db reset` や `migration up --local` を利用してください。
    - CLI v1.144 以降では `db reset` 実行時に自動で `supabase/seed/seed.sql` が流れるため、旧バージョンで使用していた `--seed` フラグは不要になりました。シードをスキップしたい場合は `supabase db reset --no-seed` を指定してください。
    - 既存データを保持したままマイグレーションのみ適用したい場合は `supabase migration up --local` を利用できます。
+   - `supabase status --env` で `SUPABASE_DB_URL` が表示されることを確認し、Docker 上のコンテナが正しく起動しているかチェックしてください。
 
 4. 型生成スクリプトを実行し、フロントエンドの Supabase 型を最新化します。
 
@@ -55,7 +56,9 @@
    pnpm supabase:types
    ```
 
-   - スクリプトはローカルで起動している Supabase (Docker) からスキーマを取得します。`supabase start` が実行済みであることを確認してください。
+   - ルート直下の `scripts/generate-supabase-types.sh` が呼び出され、`supabase status --env` から取得した `SUPABASE_DB_URL` に対して `supabase gen types ... --db-url` を実行します。必ず**リポジトリのルートで**コマンドを実行してください。
+   - `Supabase ローカル環境が起動していないか、接続情報を取得できませんでした` というメッセージが出た場合は、`supabase start` の完了を待ち、`supabase status --env` で URL が得られる状態か再度確認してください。
+   - `Cannot find project ref` が表示される場合は、古いスクリプトが残っている可能性があります。`git pull` で最新の `package.json` を取得したうえで再実行してください。
    - リモートプロジェクトに対して型生成を行いたい場合は、`supabase link --project-ref <ref>` を実行したうえで `supabase gen types typescript --linked` を直接利用してください。
 
 5. 開発サーバーを起動します。
