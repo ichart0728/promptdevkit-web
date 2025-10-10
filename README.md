@@ -55,6 +55,9 @@
    pnpm supabase:types
    ```
 
+   - スクリプトはローカルで起動している Supabase (Docker) からスキーマを取得します。`supabase start` が実行済みであることを確認してください。
+   - リモートプロジェクトに対して型生成を行いたい場合は、`supabase link --project-ref <ref>` を実行したうえで `supabase gen types typescript --linked` を直接利用してください。
+
 5. 開発サーバーを起動します。
 
    ```bash

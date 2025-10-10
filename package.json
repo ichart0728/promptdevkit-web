@@ -15,6 +15,6 @@
     "test": "pnpm -r --if-present test",
     "format": "pnpm -r --if-present format",
     "preview": "pnpm -r --if-present preview",
-    "supabase:types": "supabase gen types typescript --linked > apps/frontend/src/lib/supabase.types.ts"
+    "supabase:types": "supabase gen types typescript --local --schema public > apps/frontend/src/lib/supabase.types.ts"
   }
 }
