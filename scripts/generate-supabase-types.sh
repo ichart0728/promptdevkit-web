@@ -6,19 +6,27 @@ if ! command -v supabase >/dev/null 2>&1; then
   exit 1
 fi
 
-STATUS_OUTPUT=$(supabase status -o env 2>/dev/null || true)
+STATUS_OUTPUT=$(supabase status -o env --override-name db.url=SUPABASE_DB_URL 2>/dev/null || true)
 
 if ! echo "$STATUS_OUTPUT" | grep -q '^SUPABASE_DB_URL='; then
+  STATUS_OUTPUT=$(supabase status -o env 2>/dev/null || true)
+fi
+
+if ! echo "$STATUS_OUTPUT" | grep -Eq '^(SUPABASE_)?DB_URL='; then
   # Fallback for older CLI versions that exposed the flag as --env
   STATUS_OUTPUT=$(supabase status --env 2>/dev/null || true)
 fi
 
-if ! echo "$STATUS_OUTPUT" | grep -q '^SUPABASE_DB_URL='; then
+if ! echo "$STATUS_OUTPUT" | grep -Eq '^(SUPABASE_)?DB_URL='; then
   echo "Supabase ローカル環境が起動していないか、接続情報を取得できませんでした。\`supabase start\` を実行してから再度試してください。" >&2
   exit 1
 fi
 
-SUPABASE_DB_URL=$(echo "$STATUS_OUTPUT" | grep '^SUPABASE_DB_URL=' | tail -n1 | cut -d '=' -f2-)
+SUPABASE_DB_URL=$(echo "$STATUS_OUTPUT" | grep -E '^(SUPABASE_)?DB_URL=' | tail -n1 | cut -d '=' -f2-)
+
+# Remove surrounding quotes if the CLI returns a quoted value.
+SUPABASE_DB_URL=${SUPABASE_DB_URL%"}
+SUPABASE_DB_URL=${SUPABASE_DB_URL#"}
 
 if [ -z "$SUPABASE_DB_URL" ]; then
   echo "SUPABASE_DB_URL を取得できませんでした。\`supabase status --debug\` で状態を確認してください。" >&2
