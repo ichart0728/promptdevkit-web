@@ -42,11 +42,12 @@
 
    ```bash
    supabase start
-   supabase db push
-   supabase db reset --seed   # 開発・検証用のダミーデータ投入 (本番では禁止)
+   supabase db reset          # ローカル DB を最新化 (seed.sql も自動実行)
    ```
 
-   `--seed` はローカル開発用のダミーデータ投入です。本番環境では絶対に実行しないでください。
+   - `supabase db push` は **リンク済みのリモートプロジェクト専用** です。ローカル環境では `Cannot find project ref` エラーになるため、`db reset` や `migration up --local` を利用してください。
+   - CLI v1.144 以降では `db reset` 実行時に自動で `supabase/seed/seed.sql` が流れるため、旧バージョンで使用していた `--seed` フラグは不要になりました。シードをスキップしたい場合は `supabase db reset --no-seed` を指定してください。
+   - 既存データを保持したままマイグレーションのみ適用したい場合は `supabase migration up --local` を利用できます。
 
 4. 型生成スクリプトを実行し、フロントエンドの Supabase 型を最新化します。
 
