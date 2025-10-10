@@ -51,6 +51,8 @@ CREATE POLICY insert_prompts_for_workspace_collaborators
                   AND tm.role IN ('admin', 'editor')
             )
         )
+        AND public.prompts.created_by = auth.uid()
+        AND public.prompts.updated_by = auth.uid()
     );
 
 CREATE POLICY update_prompts_for_workspace_collaborators
@@ -99,6 +101,7 @@ CREATE POLICY update_prompts_for_workspace_collaborators
                   AND tm.role IN ('admin', 'editor')
             )
         )
+        AND public.prompts.updated_by = auth.uid()
     );
 
 CREATE POLICY delete_prompts_for_workspace_admins
