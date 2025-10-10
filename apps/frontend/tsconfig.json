@@ -10,13 +10,14 @@
       "@/pages/*": ["pages/*"],
       "@/styles/*": ["styles/*"]
     },
-    "types": ["vite/client"],
+    "types": ["vite/client", "vitest/globals"],
     "jsx": "react-jsx"
   },
   "include": [
     "src",
     "vite.config.ts",
-    "tailwind.config.ts"
+    "tailwind.config.ts",
+    "tests"
   ],
   "references": []
 }
