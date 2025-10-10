@@ -1,6 +1,4 @@
 project_id = "promptdevkit-web"
-project_ref = "promptdevkit-web"
-organization_id = "local"
 
 [db]
 major_version = 15
@@ -22,5 +20,3 @@ port = 54324
 [storage]
 file_size_limit = 52428800
 
-[edge_runtime]
-port = 54325
