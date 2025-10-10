@@ -67,7 +67,7 @@ supabase --version
    pnpm supabase:types
    ```
 
-   - コマンド実行の流れは以下の通りです。`pnpm supabase:types` (ルートで実行) → `./scripts/generate-supabase-types.sh` → `supabase status -o env --override-name db.url=SUPABASE_DB_URL` (取得できない場合は旧 CLI の `supabase status --env`) → `supabase gen types typescript --schema public --db-url <取得した URL>`。
+   - コマンド実行の流れは以下の通りです。`pnpm supabase:types` (ルートで実行。内部的には `bash ./scripts/generate-supabase-types.sh` を呼び出します) → `supabase status -o env --override-name db.url=SUPABASE_DB_URL` (取得できない場合は旧 CLI の `supabase status --env`) → `supabase gen types typescript --schema public --db-url <取得した URL>`。
    - `scripts/generate-supabase-types.sh` は `supabase status` の結果から接続文字列を動的に取得するため、`supabase link` 済みのプロジェクト ref は不要です。必ず**リポジトリのルートで**実行してください。
    - `Supabase ローカル環境が起動していないか、接続情報を取得できませんでした` というメッセージが出た場合は、`supabase start` の完了を待ち、`supabase status -o env --override-name db.url=SUPABASE_DB_URL` または `supabase status --env` で URL が得られる状態か再度確認してください。
    - `Cannot find project ref` が表示される場合は、古いスクリプトが残っている可能性があります。`git pull` で最新の `package.json` を取得したうえで再実行してください。
