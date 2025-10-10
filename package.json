@@ -14,6 +14,7 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "format": "pnpm -r --if-present format",
-    "preview": "pnpm -r --if-present preview"
+    "preview": "pnpm -r --if-present preview",
+    "supabase:types": "supabase gen types typescript --linked > apps/frontend/src/lib/supabase.types.ts"
   }
 }
