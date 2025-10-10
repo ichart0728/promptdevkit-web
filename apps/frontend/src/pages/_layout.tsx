@@ -1,6 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 
 import { Button } from '@/components/ui/button';
+import { AuthMenu } from '@/domains/auth/components/AuthMenu';
 
 const navigation = [
   { to: '/', label: 'Dashboard' },
@@ -18,21 +19,24 @@ export const RootLayout = () => {
           <Link className="text-lg font-semibold" to="/">
             PromptDevKit
           </Link>
-          <nav className="flex items-center gap-2">
-            {navigation.map((item) => {
-              const isActive = location.pathname === item.to;
-              return (
-                <Button
-                  key={item.to}
-                  asChild
-                  variant={isActive ? 'default' : 'ghost'}
-                  size="sm"
-                >
-                  <Link to={item.to}>{item.label}</Link>
-                </Button>
-              );
-            })}
-          </nav>
+          <div className="flex items-center gap-4">
+            <nav className="flex items-center gap-2">
+              {navigation.map((item) => {
+                const isActive = location.pathname === item.to;
+                return (
+                  <Button
+                    key={item.to}
+                    asChild
+                    variant={isActive ? 'default' : 'ghost'}
+                    size="sm"
+                  >
+                    <Link to={item.to}>{item.label}</Link>
+                  </Button>
+                );
+              })}
+            </nav>
+            <AuthMenu />
+          </div>
         </div>
       </header>
       <main className="flex-1">
