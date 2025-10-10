@@ -33,6 +33,15 @@
 
    `--seed` オプションはローカル開発・検証の初期データ投入にのみ利用します。本番環境では seed スクリプトを実行しないでください。
 
+4. Supabase プロジェクトを CLI でリンクし、DB スキーマから型定義を生成します。
+
+   ```bash
+   supabase link --project-ref <YOUR_PROJECT_REF>
+   pnpm supabase:types
+   ```
+
+   `pnpm supabase:types` は `supabase gen types typescript --linked` を呼び出し、`apps/frontend/src/lib/supabase.types.ts` を再生成します。スキーマを更新したらこのコマンドを再実行し、フロントエンドから型安全にクエリできるようにしてください。
+
 ## ワークスペース構成
 
 - `apps/*`: フロントエンドなどのアプリケーションパッケージを配置します。

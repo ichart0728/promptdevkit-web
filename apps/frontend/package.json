@@ -25,7 +25,8 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.51.3",
     "tailwind-merge": "^2.3.0",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "@supabase/supabase-js": "^2.43.1"
   },
   "devDependencies": {
     "@types/node": "^20.12.7",
