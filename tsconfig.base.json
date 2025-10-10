@@ -13,5 +13,5 @@
     "strict": true,
     "noEmit": true
   },
-  "include": []
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "apps/**/*.mts", "apps/**/*.cts", "apps/**/*.d.ts"]
 }
