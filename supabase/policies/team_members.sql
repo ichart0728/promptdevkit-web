@@ -19,23 +19,25 @@ CREATE POLICY insert_team_members_for_admins
     FOR INSERT
     TO authenticated
     WITH CHECK (
-        EXISTS (
-            SELECT 1
-            FROM public.team_members tm2
-            WHERE tm2.team_id = public.team_members.team_id
-              AND tm2.user_id = auth.uid()
-              AND tm2.role = 'admin'
-        )
-        OR (
-            EXISTS (
+        CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM public.team_members tm_existing
+                WHERE tm_existing.team_id = public.team_members.team_id
+                  AND tm_existing.user_id = auth.uid()
+                  AND tm_existing.role = 'admin'
+            ) THEN TRUE
+            WHEN EXISTS (
                 SELECT 1
                 FROM public.teams t
                 WHERE t.id = public.team_members.team_id
                   AND t.created_by = auth.uid()
+            ) THEN (
+                public.team_members.user_id = auth.uid()
+                AND public.team_members.role = 'admin'
             )
-            AND public.team_members.user_id = auth.uid()
-            AND public.team_members.role = 'admin'
-        )
+            ELSE FALSE
+        END
     );
 
 CREATE POLICY update_team_members_for_admins
