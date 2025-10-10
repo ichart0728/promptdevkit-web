@@ -13,7 +13,7 @@ module.exports = {
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
-        project: ['./tsconfig.base.json'],
+        project: ['./apps/frontend/tsconfig.json'],
         tsconfigRootDir: __dirname,
       },
       plugins: ['@typescript-eslint', 'simple-import-sort', 'react-hooks', 'react-refresh'],
