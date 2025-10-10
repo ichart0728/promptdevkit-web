@@ -26,6 +26,16 @@ CREATE POLICY insert_team_members_for_admins
               AND tm2.user_id = auth.uid()
               AND tm2.role = 'admin'
         )
+        OR (
+            EXISTS (
+                SELECT 1
+                FROM public.teams t
+                WHERE t.id = public.team_members.team_id
+                  AND t.created_by = auth.uid()
+            )
+            AND public.team_members.user_id = auth.uid()
+            AND public.team_members.role = 'admin'
+        )
     );
 
 CREATE POLICY update_team_members_for_admins
