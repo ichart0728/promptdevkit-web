@@ -145,6 +145,31 @@ SET
 FROM auth_user_seed s
 WHERE u.id = s.id;
 
+INSERT INTO auth.identities (
+  provider_id,
+  user_id,
+  identity_data,
+  provider,
+  last_sign_in_at,
+  created_at,
+  updated_at
+)
+SELECT
+  s.email,
+  s.id,
+  jsonb_build_object('sub', s.id::text, 'email', s.email),
+  'email',
+  s.last_sign_in_at,
+  s.created_at,
+  s.last_sign_in_at
+FROM auth_user_seed s
+ON CONFLICT (provider, provider_id) DO UPDATE
+SET
+  user_id = EXCLUDED.user_id,
+  identity_data = EXCLUDED.identity_data,
+  last_sign_in_at = EXCLUDED.last_sign_in_at,
+  updated_at = EXCLUDED.updated_at;
+
 WITH user_seed AS (
   SELECT * FROM (
     VALUES
