@@ -7,7 +7,18 @@
 - Node.js 20 (LTS)
 - pnpm 9 以上
 - Docker Desktop もしくは Podman (Supabase ローカル実行に必要)
-- Supabase CLI (ローカル開発・型生成で利用)
+- Supabase CLI v1.144 以上 (ローカル DB リセット時のシード自動実行と `supabase status -o env` に対応)
+
+### Supabase CLI のバージョン確認と更新
+
+```bash
+supabase --version
+```
+
+- npm グローバルインストールの場合: `npm install -g supabase@latest`
+- Homebrew の場合: `brew upgrade supabase/tap/supabase`
+
+バージョンが `v1.144.0` 未満の場合は必ず更新してください。旧バージョンでは `supabase status -o env` が利用できず、本手順のスクリプトが失敗します。
 
 ## 環境変数
 
@@ -42,17 +53,25 @@
 
    ```bash
    supabase start
-   supabase db push
-   supabase db reset --seed   # 開発・検証用のダミーデータ投入 (本番では禁止)
+   supabase db reset          # ローカル DB を最新化 (seed.sql も自動実行)
    ```
 
-   `--seed` はローカル開発用のダミーデータ投入です。本番環境では絶対に実行しないでください。
+   - `supabase db push` は **リンク済みのリモートプロジェクト専用** です。ローカル環境では `Cannot find project ref` エラーになるため、`db reset` や `migration up --local` を利用してください。
+   - CLI v1.144 以降では `db reset` 実行時に自動で `supabase/seed/seed.sql` が流れるため、旧バージョンで使用していた `--seed` フラグは不要になりました。シードをスキップしたい場合は `supabase db reset --no-seed` を指定してください。
+   - 既存データを保持したままマイグレーションのみ適用したい場合は `supabase migration up --local` を利用できます。
+   - `supabase status -o env --override-name db.url=SUPABASE_DB_URL` を実行し、`SUPABASE_DB_URL` (または旧バージョンでは `DB_URL`) に値が入っていることを確認してください。値が空の場合は `supabase start` の完了を待つか、`docker ps` でコンテナの稼働状態を確認して再起動してください。旧バージョンの CLI を利用している場合は `supabase status --env` でも確認できます。
 
 4. 型生成スクリプトを実行し、フロントエンドの Supabase 型を最新化します。
 
    ```bash
    pnpm supabase:types
    ```
+
+   - コマンド実行の流れは以下の通りです。`pnpm supabase:types` (ルートで実行。内部的には `bash ./scripts/generate-supabase-types.sh` を呼び出します) → `supabase status -o env --override-name db.url=SUPABASE_DB_URL` (取得できない場合は旧 CLI の `supabase status --env`) → `supabase gen types typescript --schema public --db-url <取得した URL>`。
+   - `scripts/generate-supabase-types.sh` は `supabase status` の結果から接続文字列を動的に取得するため、`supabase link` 済みのプロジェクト ref は不要です。必ず**リポジトリのルートで**実行してください。
+   - `Supabase ローカル環境が起動していないか、接続情報を取得できませんでした` というメッセージが出た場合は、`supabase start` の完了を待ち、`supabase status -o env --override-name db.url=SUPABASE_DB_URL` または `supabase status --env` で URL が得られる状態か再度確認してください。
+   - `Cannot find project ref` が表示される場合は、古いスクリプトが残っている可能性があります。`git pull` で最新の `package.json` を取得したうえで再実行してください。
+   - リモートプロジェクトに対して型生成を行いたい場合は、`supabase link --project-ref <ref>` を実行したうえで `supabase gen types typescript --linked` を直接利用してください。
 
 5. 開発サーバーを起動します。
 
