@@ -6,9 +6,25 @@
 
 - Node.js 20 (LTS)
 - pnpm 9 以上
-- Supabase CLI (オプション、ローカルで Supabase を利用する場合)
+- Docker Desktop もしくは Podman (Supabase ローカル実行に必要)
+- Supabase CLI (ローカル開発・型生成で利用)
 
-## セットアップ
+## 環境変数
+
+`.env.example` に記載している環境変数は以下の通りです。秘密情報は絶対にコミットしないでください。
+
+| 変数名 | 用途 | 必須 | 備考 |
+| --- | --- | --- | --- |
+| `VITE_SUPABASE_URL` | Supabase プロジェクトの URL | 必須 | ブラウザで利用する公開 URL。 |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon key | 必須 | ブラウザで利用する公開 anon key。 |
+| `SUPABASE_SERVICE_ROLE_KEY` | ローカル開発用の service role key | 任意 | サーバーサイド CLI/seed 用。**本番では利用しない & コミット禁止。** |
+| `PLAYWRIGHT_HOST` | E2E テスト用のホスト | 任意 | `pnpm e2e` 実行時に上書き可能。 |
+| `PLAYWRIGHT_PORT` | E2E テスト用のポート | 任意 | 既定は `4173`。 |
+| `PLAYWRIGHT_BASE_URL` | E2E テストのベース URL | 任意 | `http://{HOST}:{PORT}` がデフォルト。 |
+
+## セットアップ & ローカル起動手順
+
+クリーンな環境で README の手順をそのまま実行すればローカル開発サーバーを起動できます。
 
 1. 依存関係をインストールします。
 
@@ -16,31 +32,48 @@
    pnpm install
    ```
 
-2. 環境変数ファイルを作成します。
+2. 環境変数ファイルを `.env.example` から複製し、必要な値を設定します。
 
    ```bash
    cp .env.example .env
    ```
 
-   必要に応じて各アプリケーション/サービスごとの環境変数を `.env` に追記してください。
-
-3. Supabase を利用する場合は、CLI でプロジェクトを初期化します。
+3. Supabase をローカルで起動し、スキーマを最新化します。
 
    ```bash
    supabase start
-   supabase db reset --seed
+   supabase db push
+   supabase db reset --seed   # 開発・検証用のダミーデータ投入 (本番では禁止)
    ```
 
-   `--seed` オプションはローカル開発・検証の初期データ投入にのみ利用します。本番環境では seed スクリプトを実行しないでください。
+   `--seed` はローカル開発用のダミーデータ投入です。本番環境では絶対に実行しないでください。
 
-4. Supabase プロジェクトを CLI でリンクし、DB スキーマから型定義を生成します。
+4. 型生成スクリプトを実行し、フロントエンドの Supabase 型を最新化します。
 
    ```bash
-   supabase link --project-ref <YOUR_PROJECT_REF>
    pnpm supabase:types
    ```
 
-   `pnpm supabase:types` は `supabase gen types typescript --linked` を呼び出し、`apps/frontend/src/lib/supabase.types.ts` を再生成します。スキーマを更新したらこのコマンドを再実行し、フロントエンドから型安全にクエリできるようにしてください。
+5. 開発サーバーを起動します。
+
+   ```bash
+   pnpm -w dev
+   ```
+
+   `apps/frontend` の Vite サーバーが起動し、Supabase ローカル環境と接続できるようになります。
+
+## 検証 (テスト / 静的解析)
+
+コミット前後に以下のコマンドを実行して品質を保ちます。
+
+```bash
+pnpm -w lint
+pnpm -w typecheck
+pnpm -w test
+pnpm -C apps/frontend build
+```
+
+E2E テストが必要な場合は `pnpm -w e2e` を利用してください。
 
 ## ワークスペース構成
 
@@ -55,7 +88,7 @@
 
 | コマンド | 説明 |
 | --- | --- |
-| `pnpm -w dev` | 各パッケージの開発サーバーを起動します (`dev` スクリプトがあるパッケージが対象)。 |
+| `pnpm -w dev` | 各パッケージの開発サーバーを起動します (`apps/frontend` では Vite)。 |
 | `pnpm -w build` | すべてのパッケージでビルドを実行します。 |
 | `pnpm -w lint` | ルールに従った ESLint チェックを実行します。 |
 | `pnpm -w typecheck` | TypeScript の型チェックを実行します。 |
@@ -65,11 +98,24 @@
 
 > **メモ:** まだスクリプトを実装していないパッケージはスキップされます。各アプリケーションで必要なスクリプトを追加してください。
 
-## 開発フロー
+## Cloudflare Pages へのデプロイ概要
 
-1. Supabase を利用する場合は Docker を起動し、`supabase start` でローカル環境を用意します。
-2. フロントエンドアプリケーションなどの開発は `pnpm -w dev` で開始できます。
-3. コミット前に `pnpm -w lint`、`pnpm -w typecheck`、`pnpm -w test` を実行し、品質チェックを通過させてください。
+1. Cloudflare Pages プロジェクトを新規作成し、Git リポジトリを接続します。
+2. ビルドコマンドに `pnpm -C apps/frontend build`、ビルド出力ディレクトリに `apps/frontend/dist` を指定します。
+3. 環境変数として `VITE_SUPABASE_URL` と `VITE_SUPABASE_ANON_KEY` を Cloudflare Pages に設定します。
+4. 必要に応じて Preview/Production で値を分けてください (service role key は絶対に登録しないでください)。
+5. デプロイ後、Cloudflare 側で Supabase の CORS 設定が適切か確認します。
+
+## トラブルシューティング
+
+- **Node.js / pnpm のバージョンエラー:** `node -v` / `pnpm -v` でバージョンを確認し、指定バージョン以上に更新してください。`corepack enable` を実行すると pnpm の管理が楽になります。
+- **`tailwindcss` コマンドが見つからない:** ルートで `pnpm install` が完了しているか確認し、`pnpm -C apps/frontend exec tailwindcss -h` でコマンドが呼び出せるかテストしてください。
+- **Supabase CLI の Docker 接続エラー:** Docker Desktop / Podman を起動し、`supabase status` で状態を確認してから `supabase start` を再実行してください。
+
+## 今後のドキュメント拡充案
+
+- アーキテクチャ判断を記録するための ADR (Architecture Decision Record)
+- リリースノートを整理する CHANGELOG
 
 ## 追加のヒント
 
