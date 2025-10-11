@@ -111,7 +111,37 @@ describe('WorkspaceProvider', () => {
     });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: 'Select workspace-2' }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Select workspace-2' }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-2');
+    });
+  });
+
+  it('activates a pending workspace once it becomes available', async () => {
+    fetchWorkspacesMock.mockResolvedValue([buildWorkspace('workspace-1')]);
+
+    const { queryClient } = renderWithProvider();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+    });
+
+    const user = userEvent.setup();
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Select workspace-2' }));
+    });
+
+    expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+
+    act(() => {
+      queryClient.setQueryData(
+        ['workspaces', 'user-1'],
+        [buildWorkspace('workspace-1'), buildWorkspace('workspace-2')],
+      );
+    });
 
     await waitFor(() => {
       expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-2');

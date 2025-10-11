@@ -25,37 +25,56 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
     workspacesQuery.data,
   ]);
   const [activeWorkspaceId, setActiveWorkspaceId] = React.useState<string | null>(null);
+  const pendingActiveWorkspaceIdRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!hasSession) {
+      pendingActiveWorkspaceIdRef.current = null;
       setActiveWorkspaceId(null);
       return;
     }
 
     if (!workspaces.length) {
+      pendingActiveWorkspaceIdRef.current = null;
       setActiveWorkspaceId(null);
       return;
     }
 
     setActiveWorkspaceId((currentId) => {
+      const pendingId = pendingActiveWorkspaceIdRef.current;
+
+      if (pendingId && workspaces.some((workspace) => workspace.id === pendingId)) {
+        pendingActiveWorkspaceIdRef.current = null;
+        return pendingId;
+      }
+
       if (currentId && workspaces.some((workspace) => workspace.id === currentId)) {
         return currentId;
       }
 
+      pendingActiveWorkspaceIdRef.current = null;
       return workspaces[0]?.id ?? null;
     });
   }, [hasSession, workspaces]);
 
   const handleSetActiveWorkspaceId = React.useCallback(
     (workspaceId: string) => {
+      pendingActiveWorkspaceIdRef.current = workspaceId;
+
       setActiveWorkspaceId((currentId) => {
         if (currentId === workspaceId) {
+          pendingActiveWorkspaceIdRef.current = null;
           return currentId;
         }
 
         const exists = workspaces.some((workspace) => workspace.id === workspaceId);
 
-        return exists ? workspaceId : currentId;
+        if (exists) {
+          pendingActiveWorkspaceIdRef.current = null;
+          return workspaceId;
+        }
+
+        return currentId;
       });
     },
     [workspaces],
