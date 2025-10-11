@@ -14,6 +14,7 @@ import {
 } from '@/lib/limits';
 
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
+import { useActiveWorkspace } from '@/domains/workspaces/hooks/useActiveWorkspace';
 import { createPrompt, fetchPrompts, promptsQueryKey, type Prompt } from '../api/prompts';
 import {
   fetchPlanLimits,
@@ -22,7 +23,6 @@ import {
   userPlanQueryKey,
 } from '../api/planLimits';
 
-const DEMO_PERSONAL_WORKSPACE_ID = '0c93a3c6-7c5b-4f24-a413-2b142a4b6aaf' as const;
 const PROMPTS_PER_PERSONAL_WS_LIMIT_KEY = 'prompts_per_personal_ws';
 
 const promptSchema = z.object({
@@ -51,17 +51,25 @@ const buildErrorMessage = (message?: string) =>
 export const PromptsPage = () => {
   const queryClient = useQueryClient();
   const sessionQuery = useSessionQuery();
+  const activeWorkspace = useActiveWorkspace();
   const [simulateError, setSimulateError] = React.useState(false);
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
 
-  const promptsKey = React.useMemo(() => promptsQueryKey(DEMO_PERSONAL_WORKSPACE_ID), []);
+  const workspaceId = activeWorkspace?.id ?? null;
+  const promptsKey = React.useMemo(
+    () => (workspaceId ? promptsQueryKey(workspaceId) : (['prompts', 'no-workspace'] as const)),
+    [workspaceId],
+  );
   const userId = sessionQuery.data?.user?.id ?? null;
 
   const promptsQuery = useQuery({
     queryKey: promptsKey,
-    queryFn: () => fetchPrompts({ workspaceId: DEMO_PERSONAL_WORKSPACE_ID }),
-    enabled: !!userId,
+    queryFn: () =>
+      workspaceId
+        ? fetchPrompts({ workspaceId })
+        : Promise.reject(new Error('Workspace is required to fetch prompts.')),
+    enabled: !!userId && !!workspaceId,
     retry: false,
   });
 
@@ -132,8 +140,12 @@ export const PromptsPage = () => {
         throw new Error('You must be signed in to create prompts.');
       }
 
+      if (!workspaceId) {
+        throw new Error('You must select a workspace before creating prompts.');
+      }
+
       return createPrompt({
-        workspaceId: DEMO_PERSONAL_WORKSPACE_ID,
+        workspaceId,
         userId,
         title: values.title,
         body: values.body,
@@ -141,6 +153,10 @@ export const PromptsPage = () => {
       });
     },
     onMutate: async (values) => {
+      if (!workspaceId) {
+        throw new Error('You must select a workspace before creating prompts.');
+      }
+
       await queryClient.cancelQueries({ queryKey: promptsKey });
       const previousPrompts = queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? [];
       const optimisticId = `optimistic-${Date.now()}`;
@@ -217,6 +233,11 @@ export const PromptsPage = () => {
       return;
     }
 
+    if (!workspaceId) {
+      setLastEvaluation(null);
+      return;
+    }
+
     await createPromptMutation.mutateAsync(values);
     form.reset();
   });
@@ -226,6 +247,14 @@ export const PromptsPage = () => {
       return (
         <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
           Sign in to manage your workspace prompts.
+        </div>
+      );
+    }
+
+    if (!workspaceId) {
+      return (
+        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+          No workspaces available. Create or join a workspace to manage prompts.
         </div>
       );
     }
@@ -297,7 +326,7 @@ export const PromptsPage = () => {
     queryClient.invalidateQueries({ queryKey: promptsKey });
   };
 
-  const isLoading = promptsQuery.status === 'pending' && prompts.length === 0;
+  const isLoading = promptsQuery.status === 'pending' && prompts.length === 0 && !!workspaceId;
   const isError = simulateError || promptsQuery.status === 'error';
   const isEmpty = serverPrompts.length === 0 && promptsQuery.status === 'success';
   const isPlanLimitLoading = planId ? planLimitsQuery.status === 'pending' : isPlanLookupLoading;
@@ -436,6 +465,7 @@ export const PromptsPage = () => {
               type="submit"
               disabled={
                 !userId ||
+                !workspaceId ||
                 isLoading ||
                 createPromptMutation.isPending ||
                 simulateError ||
@@ -451,6 +481,8 @@ export const PromptsPage = () => {
                 ? 'Loading…'
                 : !userId
                 ? 'Sign in to create prompts'
+                : !workspaceId
+                ? 'Select a workspace to create prompts'
                 : simulateError
                 ? 'Unavailable during error simulation'
                 : isPlanLimitLoading

@@ -1,0 +1,90 @@
+import * as React from 'react';
+import { useQuery } from '@tanstack/react-query';
+
+import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
+import { workspacesQueryOptions } from '../api/workspaces';
+import { WorkspaceContext, type WorkspaceContextValue } from '../contexts/WorkspaceContext';
+
+const noopRefetch = async () => Promise.resolve();
+
+export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) => {
+  const sessionQuery = useSessionQuery();
+  const userId = sessionQuery.data?.user?.id ?? null;
+  const hasSession = !!userId;
+
+  const workspacesQuery = useQuery({
+    ...workspacesQueryOptions(userId),
+    enabled: hasSession,
+  });
+
+  const workspaces = React.useMemo(() => (hasSession ? workspacesQuery.data ?? [] : []), [
+    hasSession,
+    workspacesQuery.data,
+  ]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!hasSession) {
+      setActiveWorkspaceId(null);
+      return;
+    }
+
+    if (!workspaces.length) {
+      setActiveWorkspaceId(null);
+      return;
+    }
+
+    setActiveWorkspaceId((currentId) => {
+      if (currentId && workspaces.some((workspace) => workspace.id === currentId)) {
+        return currentId;
+      }
+
+      return workspaces[0]?.id ?? null;
+    });
+  }, [hasSession, workspaces]);
+
+  const handleSetActiveWorkspaceId = React.useCallback(
+    (workspaceId: string) => {
+      setActiveWorkspaceId((currentId) => {
+        if (currentId === workspaceId) {
+          return currentId;
+        }
+
+        const exists = workspaces.some((workspace) => workspace.id === workspaceId);
+
+        return exists ? workspaceId : currentId;
+      });
+    },
+    [workspaces],
+  );
+
+  const activeWorkspace = React.useMemo(
+    () => workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
+    [workspaces, activeWorkspaceId],
+  );
+
+  const contextValue = React.useMemo<WorkspaceContextValue>(
+    () => ({
+      workspaces,
+      activeWorkspace,
+      setActiveWorkspaceId: handleSetActiveWorkspaceId,
+      isLoading: hasSession && workspacesQuery.isPending,
+      isError: hasSession && workspacesQuery.status === 'error',
+      error: hasSession && workspacesQuery.status === 'error' ? (workspacesQuery.error as Error) : null,
+      refetch: hasSession ? workspacesQuery.refetch : noopRefetch,
+      hasSession,
+    }),
+    [
+      workspaces,
+      activeWorkspace,
+      handleSetActiveWorkspaceId,
+      hasSession,
+      workspacesQuery.isPending,
+      workspacesQuery.status,
+      workspacesQuery.error,
+      workspacesQuery.refetch,
+    ],
+  );
+
+  return <WorkspaceContext.Provider value={contextValue}>{children}</WorkspaceContext.Provider>;
+};
