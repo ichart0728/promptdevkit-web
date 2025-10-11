@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { Workspace } from '@/domains/workspaces/api/workspaces';
 
 type PromptRow = {
   id: string;
@@ -15,12 +16,13 @@ export type Prompt = {
 };
 
 export type FetchPromptsParams = {
-  workspaceId: string;
+  workspace: Pick<Workspace, 'id' | 'type'>;
 };
 
 export const promptsQueryKey = (workspaceId: string) => ['prompts', workspaceId] as const;
 
-export const fetchPrompts = async ({ workspaceId }: FetchPromptsParams): Promise<Prompt[]> => {
+export const fetchPrompts = async ({ workspace }: FetchPromptsParams): Promise<Prompt[]> => {
+  const { id: workspaceId } = workspace;
   const { data, error } = await supabase
     .from('prompts')
     .select('id,title,body,tags')
@@ -43,14 +45,15 @@ export const fetchPrompts = async ({ workspaceId }: FetchPromptsParams): Promise
 };
 
 export type CreatePromptParams = {
-  workspaceId: string;
+  workspace: Pick<Workspace, 'id' | 'type'>;
   userId: string;
   title: string;
   body: string;
   tags: string[];
 };
 
-export const createPrompt = async ({ workspaceId, userId, title, body, tags }: CreatePromptParams) => {
+export const createPrompt = async ({ workspace, userId, title, body, tags }: CreatePromptParams) => {
+  const { id: workspaceId } = workspace;
   const insertPayload = [
     {
       workspace_id: workspaceId,

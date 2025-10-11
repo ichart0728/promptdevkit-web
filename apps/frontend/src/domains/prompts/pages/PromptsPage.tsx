@@ -24,6 +24,12 @@ import {
 } from '../api/planLimits';
 
 const PROMPTS_PER_PERSONAL_WS_LIMIT_KEY = 'prompts_per_personal_ws';
+const PROMPTS_PER_TEAM_WS_LIMIT_KEY = 'prompts_per_team_ws';
+
+const PLAN_LIMIT_KEYS_BY_WORKSPACE_TYPE = {
+  personal: PROMPTS_PER_PERSONAL_WS_LIMIT_KEY,
+  team: PROMPTS_PER_TEAM_WS_LIMIT_KEY,
+} as const;
 
 const promptSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -58,6 +64,9 @@ export const PromptsPage = () => {
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
 
   const workspaceId = activeWorkspace?.id ?? null;
+  const workspaceType = activeWorkspace?.type ?? null;
+  const workspaceName = activeWorkspace?.name ?? null;
+  const planLimitKey = workspaceType ? PLAN_LIMIT_KEYS_BY_WORKSPACE_TYPE[workspaceType] : null;
   const promptsKey = React.useMemo(
     () => (workspaceId ? promptsQueryKey(workspaceId) : (['prompts', 'no-workspace'] as const)),
     [workspaceId],
@@ -67,8 +76,8 @@ export const PromptsPage = () => {
   const promptsQuery = useQuery({
     queryKey: promptsKey,
     queryFn: () =>
-      workspaceId
-        ? fetchPrompts({ workspaceId })
+      workspaceId && activeWorkspace
+        ? fetchPrompts({ workspace: activeWorkspace })
         : Promise.reject(new Error('Workspace is required to fetch prompts.')),
     enabled: !!userId && !!workspaceId,
     retry: false,
@@ -141,12 +150,12 @@ export const PromptsPage = () => {
         throw new Error('You must be signed in to create prompts.');
       }
 
-      if (!workspaceId) {
+      if (!workspaceId || !activeWorkspace) {
         throw new Error('You must select a workspace before creating prompts.');
       }
 
       return createPrompt({
-        workspaceId,
+        workspace: activeWorkspace,
         userId,
         title: values.title,
         body: values.body,
@@ -233,9 +242,14 @@ export const PromptsPage = () => {
       return;
     }
 
+    if (!planLimitKey) {
+      setLastEvaluation(null);
+      return;
+    }
+
     const evaluation = evaluateIntegerPlanLimit({
       limits: planLimits,
-      key: PROMPTS_PER_PERSONAL_WS_LIMIT_KEY,
+      key: planLimitKey,
       currentUsage,
     });
 
@@ -344,7 +358,7 @@ export const PromptsPage = () => {
   const isEmpty = serverPrompts.length === 0 && promptsQuery.status === 'success';
   const isPlanLimitLoading = planId ? planLimitsQuery.status === 'pending' : isPlanLookupLoading;
   const planLimitError = planLimitsQuery.status === 'error';
-  const planLimitRecord = planLimitsQuery.data?.[PROMPTS_PER_PERSONAL_WS_LIMIT_KEY] ?? null;
+  const planLimitRecord = planLimitKey ? planLimitsQuery.data?.[planLimitKey] ?? null : null;
   const planLimitValueLabel = React.useMemo(() => {
     if (isPlanLimitLoading) {
       return 'Checking plan limits…';
@@ -358,17 +372,57 @@ export const PromptsPage = () => {
       return 'Plan limit unavailable';
     }
 
+    if (!planLimitKey) {
+      return 'Select a workspace to check plan limits';
+    }
+
     if (!planLimitRecord) {
       return 'Plan limit missing';
     }
 
-    return `Plan limit: ${planLimitRecord.value_int ?? 'Unlimited'} prompts`;
-  }, [isPlanLimitLoading, planLookupError, planLimitError, planLimitRecord]);
+    const limitValue = planLimitRecord.value_int ?? 'Unlimited';
+    const workspaceLabel = workspaceName ?? 'workspace';
+
+    return `Plan limit for ${workspaceLabel}: ${limitValue} prompts`;
+  }, [
+    isPlanLimitLoading,
+    planLookupError,
+    planLimitError,
+    planLimitRecord,
+    workspaceName,
+    planLimitKey,
+  ]);
+
+  const lastWorkspaceIdRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    const previousWorkspaceId = lastWorkspaceIdRef.current;
+
+    if (workspaceId && workspaceId !== previousWorkspaceId) {
+      queryClient.invalidateQueries({ queryKey: promptsQueryKey(workspaceId) });
+    }
+
+    if (previousWorkspaceId && previousWorkspaceId !== workspaceId) {
+      queryClient.invalidateQueries({ queryKey: promptsQueryKey(previousWorkspaceId) });
+    }
+
+    if (previousWorkspaceId !== workspaceId) {
+      setLastEvaluation(null);
+      setUpgradeOpen(false);
+    }
+
+    lastWorkspaceIdRef.current = workspaceId;
+  }, [workspaceId, queryClient]);
 
   return (
     <section className="space-y-6">
       <header className="space-y-1">
-        <h1 className="text-3xl font-bold tracking-tight">Prompts</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-3xl font-bold tracking-tight">Prompts</h1>
+          <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+            {workspaceName ? `Workspace: ${workspaceName}` : 'No workspace selected'}
+          </span>
+        </div>
         <p className="text-sm text-muted-foreground">
           Manage prompt templates backed by Supabase with optimistic updates, loading, empty, and error states.
         </p>
@@ -512,8 +566,17 @@ export const PromptsPage = () => {
         </div>
 
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Workspace prompts</h2>
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col">
+              <h2 className="text-lg font-semibold">
+                Workspace prompts{workspaceName ? ` · ${workspaceName}` : ''}
+              </h2>
+              {workspaceType ? (
+                <span className="text-xs uppercase text-muted-foreground">
+                  {workspaceType === 'team' ? 'Team workspace' : 'Personal workspace'}
+                </span>
+              ) : null}
+            </div>
             <span className="text-sm text-muted-foreground">
               Query key: [{promptsKey[0]}, "{promptsKey[1]}"]
             </span>

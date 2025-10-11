@@ -71,23 +71,39 @@ const buildSessionQueryValue = (
     ...overrides,
   } as unknown as ReturnType<typeof useSessionQuery>);
 
-const workspace = {
+const personalWorkspace = {
   id: 'workspace-1',
-  name: 'Personal',
+  name: 'Personal Space',
   type: 'personal' as const,
   teamId: null,
 };
+
+const teamWorkspace = {
+  id: 'workspace-2',
+  name: 'Team Space',
+  type: 'team' as const,
+  teamId: 'team-123',
+};
+
+let activeWorkspaceRef: { current: typeof personalWorkspace | typeof teamWorkspace | null };
 
 describe('PromptsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useSessionQueryMock.mockReturnValue(buildSessionQueryValue());
-    useActiveWorkspaceMock.mockReturnValue(workspace);
+    activeWorkspaceRef = { current: personalWorkspace };
+    useActiveWorkspaceMock.mockImplementation(() => activeWorkspaceRef.current);
     fetchUserPlanIdMock.mockResolvedValue('free');
     fetchPlanLimitsMock.mockResolvedValue({
       prompts_per_personal_ws: {
         key: 'prompts_per_personal_ws',
         value_int: 20,
+        value_str: null,
+        value_json: null,
+      },
+      prompts_per_team_ws: {
+        key: 'prompts_per_team_ws',
+        value_int: 5,
         value_str: null,
         value_json: null,
       },
@@ -161,7 +177,7 @@ describe('PromptsPage', () => {
 
     await screen.findByText('(saving…)');
     expect(createPromptMock).toHaveBeenCalledWith({
-      workspaceId: workspace.id,
+      workspace: personalWorkspace,
       userId: 'user-1',
       title: 'New prompt',
       body: 'Generate a project summary.',
@@ -193,6 +209,12 @@ describe('PromptsPage', () => {
       prompts_per_personal_ws: {
         key: 'prompts_per_personal_ws',
         value_int: 1,
+        value_str: null,
+        value_json: null,
+      },
+      prompts_per_team_ws: {
+        key: 'prompts_per_team_ws',
+        value_int: 5,
         value_str: null,
         value_json: null,
       },
@@ -237,6 +259,12 @@ describe('PromptsPage', () => {
         value_str: null,
         value_json: null,
       },
+      prompts_per_team_ws: {
+        key: 'prompts_per_team_ws',
+        value_int: 5,
+        value_str: null,
+        value_json: null,
+      },
     });
     const user = userEvent.setup();
 
@@ -253,5 +281,66 @@ describe('PromptsPage', () => {
 
     await screen.findByText('Upgrade to unlock more capacity');
     expect(createPromptMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('PromptsPage workspace awareness', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSessionQueryMock.mockReturnValue(buildSessionQueryValue());
+    activeWorkspaceRef = { current: personalWorkspace };
+    useActiveWorkspaceMock.mockImplementation(() => activeWorkspaceRef.current);
+    fetchUserPlanIdMock.mockResolvedValue('free');
+    fetchPlanLimitsMock.mockResolvedValue({
+      prompts_per_personal_ws: {
+        key: 'prompts_per_personal_ws',
+        value_int: 2,
+        value_str: null,
+        value_json: null,
+      },
+      prompts_per_team_ws: {
+        key: 'prompts_per_team_ws',
+        value_int: 1,
+        value_str: null,
+        value_json: null,
+      },
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('shows workspace metadata in the header', async () => {
+    fetchPromptsMock.mockResolvedValue([]);
+
+    renderPromptsPage();
+
+    await screen.findByText('Workspace: Personal Space');
+    await screen.findByText('Plan limit for Personal Space: 2 prompts');
+  });
+
+  it('switches plan limit keys when the active workspace changes', async () => {
+    fetchPromptsMock.mockResolvedValue([]);
+
+    const { rerender, queryClient } = renderPromptsPage();
+
+    await screen.findByText('Plan limit for Personal Space: 2 prompts');
+    expect(fetchPromptsMock).toHaveBeenLastCalledWith({ workspace: personalWorkspace });
+
+    activeWorkspaceRef.current = teamWorkspace;
+    fetchPromptsMock.mockResolvedValueOnce([]);
+
+    await act(async () => {
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <PromptsPage />
+        </QueryClientProvider>,
+      );
+    });
+
+    await screen.findByText('Team workspace');
+    expect(fetchPromptsMock).toHaveBeenLastCalledWith({ workspace: teamWorkspace });
+    await screen.findByText('Plan limit for Team Space: 1 prompts');
   });
 });
