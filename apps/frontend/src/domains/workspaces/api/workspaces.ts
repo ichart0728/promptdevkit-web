@@ -40,6 +40,36 @@ export const fetchWorkspaces = async (): Promise<Workspace[]> => {
   return rows.map(mapRowToWorkspace);
 };
 
+export type CreateWorkspaceParams = {
+  name: string;
+  type: Workspace['type'];
+  teamId?: string | null;
+};
+
+export const createWorkspace = async ({
+  name,
+  type,
+  teamId = null,
+}: CreateWorkspaceParams): Promise<Workspace> => {
+  const { data, error } = await supabase.rpc('create_workspace', {
+    workspace_name: name,
+    workspace_type: type,
+    workspace_team_id: type === 'team' ? teamId : null,
+  } as never);
+
+  if (error) {
+    throw error;
+  }
+
+  const row = data as WorkspaceRow | null;
+
+  if (!row) {
+    throw new Error('Workspace creation did not return a result.');
+  }
+
+  return mapRowToWorkspace(row);
+};
+
 export const workspacesQueryOptions = (userId: string | null) =>
   queryOptions({
     queryKey: workspacesQueryKey(userId),
