@@ -14,8 +14,10 @@ import {
   type PlanLimitRecord,
 } from '@/lib/limits';
 
-const PROMPTS_QUERY_PARAMS = { workspaceId: 'demo-workspace' } as const;
-const PROMPTS_QUERY_KEY = ['prompts', PROMPTS_QUERY_PARAMS] as const;
+import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
+import { createPrompt, fetchPrompts, promptsQueryKey, type Prompt } from '../api/prompts';
+
+const DEMO_PERSONAL_WORKSPACE_ID = '0c93a3c6-7c5b-4f24-a413-2b142a4b6aaf' as const;
 
 const planLimitSeed: PlanLimitRecord[] = [
   {
@@ -36,79 +38,70 @@ const promptSchema = z.object({
 
 export type PromptFormValues = z.infer<typeof promptSchema>;
 
-type Prompt = {
-  id: string;
-  title: string;
-  body: string;
-  tags: string[];
-  isOptimistic?: boolean;
-};
+type PromptListItem = Prompt & { isOptimistic?: boolean };
 
 type OptimisticContext = {
-  previousPrompts?: Prompt[];
-  optimisticId?: string;
+  previousPrompts: PromptListItem[];
+  optimisticId: string;
 };
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const seedPrompts: Prompt[] = [
-  {
-    id: 'seed-1',
-    title: 'Meeting summary assistant',
-    body: 'Summarize notes into action items and highlights.',
-    tags: ['summary', 'meeting'],
-  },
-];
-
-const usePromptsQuery = (dbRef: React.MutableRefObject<Prompt[]>, simulateError: boolean) =>
-  useQuery({
-    queryKey: PROMPTS_QUERY_KEY,
-    queryFn: async () => {
-      await delay(300);
-      if (simulateError) {
-        throw new Error('Simulated fetch failure');
-      }
-
-      return dbRef.current;
-    },
-  });
 
 const formatTags = (raw: string | undefined) =>
   raw?.split(',')
     .map((tag) => tag.trim())
     .filter(Boolean) ?? [];
 
+const buildErrorMessage = (message?: string) =>
+  `Failed to load prompts. ${message ?? 'Unknown error'}`;
+
 export const PromptsPage = () => {
   const queryClient = useQueryClient();
-  const mockDbRef = React.useRef<Prompt[]>([...seedPrompts]);
-
+  const sessionQuery = useSessionQuery();
   const [simulateError, setSimulateError] = React.useState(false);
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
 
-  const promptsQuery = usePromptsQuery(mockDbRef, simulateError);
+  const promptsKey = React.useMemo(() => promptsQueryKey(DEMO_PERSONAL_WORKSPACE_ID), []);
+  const userId = sessionQuery.data?.user?.id ?? null;
+
+  const promptsQuery = useQuery({
+    queryKey: promptsKey,
+    queryFn: () => fetchPrompts({ workspaceId: DEMO_PERSONAL_WORKSPACE_ID }),
+    enabled: !!userId,
+    retry: false,
+  });
+
+  const hasMountedRef = React.useRef(false);
 
   React.useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: PROMPTS_QUERY_KEY });
-  }, [simulateError, queryClient]);
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
+    if (!simulateError) {
+      queryClient.invalidateQueries({ queryKey: promptsKey });
+    }
+  }, [simulateError, queryClient, promptsKey]);
 
   const createPromptMutation = useMutation<Prompt, Error, PromptFormValues, OptimisticContext>({
     mutationFn: async (values) => {
-      await delay(400);
-      const newPrompt: Prompt = {
-        id: crypto.randomUUID(),
+      if (!userId) {
+        throw new Error('You must be signed in to create prompts.');
+      }
+
+      return createPrompt({
+        workspaceId: DEMO_PERSONAL_WORKSPACE_ID,
+        userId,
         title: values.title,
         body: values.body,
         tags: formatTags(values.tags),
-      };
-      mockDbRef.current = [...mockDbRef.current, newPrompt];
-      return newPrompt;
+      });
     },
     onMutate: async (values) => {
-      await queryClient.cancelQueries({ queryKey: PROMPTS_QUERY_KEY });
-      const previousPrompts = queryClient.getQueryData<Prompt[]>(PROMPTS_QUERY_KEY) ?? mockDbRef.current;
+      await queryClient.cancelQueries({ queryKey: promptsKey });
+      const previousPrompts = queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? [];
       const optimisticId = `optimistic-${Date.now()}`;
-      const optimisticPrompt: Prompt = {
+      const optimisticPrompt: PromptListItem = {
         id: optimisticId,
         title: values.title,
         body: values.body,
@@ -116,26 +109,26 @@ export const PromptsPage = () => {
         isOptimistic: true,
       };
 
-      queryClient.setQueryData<Prompt[]>(PROMPTS_QUERY_KEY, [...previousPrompts, optimisticPrompt]);
+      queryClient.setQueryData<PromptListItem[]>(promptsKey, [...previousPrompts, optimisticPrompt]);
 
       return { previousPrompts, optimisticId } satisfies OptimisticContext;
     },
     onError: (_error, _variables, context) => {
-      if (context?.previousPrompts) {
-        queryClient.setQueryData(PROMPTS_QUERY_KEY, context.previousPrompts);
+      if (context) {
+        queryClient.setQueryData(promptsKey, context.previousPrompts);
       }
     },
     onSuccess: (newPrompt, _variables, context) => {
-      queryClient.setQueryData<Prompt[]>(PROMPTS_QUERY_KEY, (current) => {
+      queryClient.setQueryData<PromptListItem[]>(promptsKey, (current) => {
         if (!current) {
           return [newPrompt];
         }
 
-        return current.map((prompt) => (prompt.id === context?.optimisticId ? { ...newPrompt } : prompt));
+        return current.map((prompt) => (prompt.id === context.optimisticId ? { ...newPrompt } : prompt));
       });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: PROMPTS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: promptsKey });
     },
   });
 
@@ -148,6 +141,10 @@ export const PromptsPage = () => {
     },
   });
 
+  const cachedPrompts = queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? [];
+  const serverPrompts = (promptsQuery.data ?? []) as PromptListItem[];
+  const prompts = cachedPrompts.length ? cachedPrompts : serverPrompts;
+
   const handleUpgradeDialogChange = (open: boolean) => {
     setUpgradeOpen(open);
     if (!open) {
@@ -156,7 +153,7 @@ export const PromptsPage = () => {
   };
 
   const handleSubmit = form.handleSubmit(async (values) => {
-    const currentUsage = promptsQuery.data?.length ?? mockDbRef.current.length;
+    const currentUsage = (queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? prompts).length;
     const evaluation = evaluateIntegerPlanLimit({
       limits: planLimitMap,
       key: 'prompts_per_personal_ws',
@@ -175,19 +172,33 @@ export const PromptsPage = () => {
   });
 
   const renderPrompts = () => {
-    if (promptsQuery.status === 'pending') {
+    if (!userId) {
+      return (
+        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+          Sign in to manage your workspace prompts.
+        </div>
+      );
+    }
+
+    if (simulateError) {
+      return (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-6 text-sm text-destructive">
+          {buildErrorMessage('Simulated fetch failure')}
+        </div>
+      );
+    }
+
+    if (promptsQuery.status === 'pending' && prompts.length === 0) {
       return <div className="rounded-md border border-dashed p-6 text-sm">Loading prompts…</div>;
     }
 
     if (promptsQuery.status === 'error') {
       return (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-6 text-sm text-destructive">
-          Failed to load prompts. {promptsQuery.error?.message ?? 'Unknown error'}
+          {buildErrorMessage(promptsQuery.error?.message)}
         </div>
       );
     }
-
-    const prompts = promptsQuery.data ?? [];
 
     if (prompts.length === 0) {
       return (
@@ -205,7 +216,9 @@ export const PromptsPage = () => {
               <div>
                 <h3 className="text-base font-semibold text-foreground">
                   {prompt.title}
-                  {prompt.isOptimistic ? <span className="ml-2 text-xs uppercase text-muted-foreground">(saving…)</span> : null}
+                  {prompt.isOptimistic ? (
+                    <span className="ml-2 text-xs uppercase text-muted-foreground">(saving…)</span>
+                  ) : null}
                 </h3>
                 <p className="mt-2 text-sm text-muted-foreground">{prompt.body}</p>
               </div>
@@ -226,21 +239,24 @@ export const PromptsPage = () => {
   };
 
   const handleResetData = () => {
-    mockDbRef.current = [];
-    queryClient.setQueryData(PROMPTS_QUERY_KEY, []);
+    queryClient.setQueryData<PromptListItem[]>(promptsKey, []);
   };
 
   const handleRestoreSeed = () => {
-    mockDbRef.current = [...seedPrompts];
-    queryClient.setQueryData(PROMPTS_QUERY_KEY, [...seedPrompts]);
+    setSimulateError(false);
+    queryClient.invalidateQueries({ queryKey: promptsKey });
   };
+
+  const isLoading = promptsQuery.status === 'pending' && prompts.length === 0;
+  const isError = simulateError || promptsQuery.status === 'error';
+  const isEmpty = serverPrompts.length === 0 && promptsQuery.status === 'success';
 
   return (
     <section className="space-y-6">
       <header className="space-y-1">
         <h1 className="text-3xl font-bold tracking-tight">Prompts</h1>
         <p className="text-sm text-muted-foreground">
-          Manage prompt templates. This page mocks optimistic updates, loading, empty, and error states while enforcing plan limits.
+          Manage prompt templates backed by Supabase with optimistic updates, loading, empty, and error states.
         </p>
       </header>
 
@@ -264,7 +280,7 @@ export const PromptsPage = () => {
           className="rounded border px-2 py-1 font-medium text-foreground hover:bg-muted"
           onClick={handleRestoreSeed}
         >
-          Restore sample data
+          Refetch Supabase data
         </button>
         <span>Optimistic updates display a “saving…” badge while the mutation is in flight.</span>
       </div>
@@ -274,7 +290,7 @@ export const PromptsPage = () => {
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">New prompt</h2>
             <p className="text-sm text-muted-foreground">
-              The form uses React Hook Form with a Zod schema as a placeholder.
+              The form uses React Hook Form with a Zod schema validated against Supabase fields.
             </p>
           </div>
 
@@ -324,8 +340,19 @@ export const PromptsPage = () => {
               ) : null}
             </div>
 
-            <Button type="submit" disabled={promptsQuery.status === 'pending' || createPromptMutation.isPending}>
-              {createPromptMutation.isPending ? 'Saving…' : promptsQuery.status === 'pending' ? 'Loading…' : 'Create prompt'}
+            <Button
+              type="submit"
+              disabled={!userId || isLoading || createPromptMutation.isPending || simulateError}
+            >
+              {createPromptMutation.isPending
+                ? 'Saving…'
+                : isLoading
+                ? 'Loading…'
+                : !userId
+                ? 'Sign in to create prompts'
+                : simulateError
+                ? 'Unavailable during error simulation'
+                : 'Create prompt'}
             </Button>
           </form>
         </div>
@@ -334,7 +361,7 @@ export const PromptsPage = () => {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Workspace prompts</h2>
             <span className="text-sm text-muted-foreground">
-              Query key: [{PROMPTS_QUERY_KEY[0]}, {JSON.stringify(PROMPTS_QUERY_KEY[1])}]
+              Query key: [{promptsKey[0]}, "{promptsKey[1]}"]
             </span>
           </div>
           {renderPrompts()}
@@ -345,18 +372,18 @@ export const PromptsPage = () => {
         {[
           {
             label: 'Loading',
-            active: promptsQuery.status === 'pending',
+            active: isLoading,
             description: 'Shows a dashed placeholder while data is loading.',
           },
           {
             label: 'Empty',
-            active: (promptsQuery.data ?? []).length === 0 && promptsQuery.status === 'success',
-            description: 'Reset the dataset to view the empty illustration.',
+            active: isEmpty,
+            description: 'Use the developer shortcut to inspect the empty illustration.',
           },
           {
             label: 'Error',
-            active: promptsQuery.status === 'error',
-            description: 'Toggle the error simulation to inspect fallback UI.',
+            active: isError,
+            description: 'Toggle the error simulation or trigger a failed fetch to inspect fallback UI.',
           },
           {
             label: 'Optimistic update',
