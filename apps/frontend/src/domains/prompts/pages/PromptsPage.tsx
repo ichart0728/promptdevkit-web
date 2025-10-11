@@ -38,6 +38,7 @@ type PromptListItem = Prompt & { isOptimistic?: boolean };
 type OptimisticContext = {
   previousPrompts: PromptListItem[];
   optimisticId: string;
+  queryKey: ReturnType<typeof promptsQueryKey>;
 };
 
 const formatTags = (raw: string | undefined) =>
@@ -157,8 +158,10 @@ export const PromptsPage = () => {
         throw new Error('You must select a workspace before creating prompts.');
       }
 
-      await queryClient.cancelQueries({ queryKey: promptsKey });
-      const previousPrompts = queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? [];
+      const mutationQueryKey = promptsQueryKey(workspaceId);
+
+      await queryClient.cancelQueries({ queryKey: mutationQueryKey });
+      const previousPrompts = queryClient.getQueryData<PromptListItem[]>(mutationQueryKey) ?? [];
       const optimisticId = `optimistic-${Date.now()}`;
       const optimisticPrompt: PromptListItem = {
         id: optimisticId,
@@ -168,17 +171,22 @@ export const PromptsPage = () => {
         isOptimistic: true,
       };
 
-      queryClient.setQueryData<PromptListItem[]>(promptsKey, [...previousPrompts, optimisticPrompt]);
+      queryClient.setQueryData<PromptListItem[]>(mutationQueryKey, [...previousPrompts, optimisticPrompt]);
 
-      return { previousPrompts, optimisticId } satisfies OptimisticContext;
+      return { previousPrompts, optimisticId, queryKey: mutationQueryKey } satisfies OptimisticContext;
     },
     onError: (_error, _variables, context) => {
       if (context) {
-        queryClient.setQueryData(promptsKey, context.previousPrompts);
+        queryClient.setQueryData(context.queryKey, context.previousPrompts);
       }
     },
     onSuccess: (newPrompt, _variables, context) => {
-      queryClient.setQueryData<PromptListItem[]>(promptsKey, (current) => {
+      if (!context) {
+        queryClient.invalidateQueries({ queryKey: promptsKey });
+        return;
+      }
+
+      queryClient.setQueryData<PromptListItem[]>(context.queryKey, (current) => {
         if (!current) {
           return [newPrompt];
         }
@@ -186,7 +194,12 @@ export const PromptsPage = () => {
         return current.map((prompt) => (prompt.id === context.optimisticId ? { ...newPrompt } : prompt));
       });
     },
-    onSettled: () => {
+    onSettled: (_data, _error, _variables, context) => {
+      if (context) {
+        queryClient.invalidateQueries({ queryKey: context.queryKey });
+        return;
+      }
+
       queryClient.invalidateQueries({ queryKey: promptsKey });
     },
   });
