@@ -9,26 +9,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   evaluateIntegerPlanLimit,
-  indexPlanLimits,
   type IntegerPlanLimitEvaluation,
-  type PlanLimitRecord,
+  type PlanLimitMap,
 } from '@/lib/limits';
 
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { createPrompt, fetchPrompts, promptsQueryKey, type Prompt } from '../api/prompts';
+import {
+  fetchPlanLimits,
+  fetchUserPlanId,
+  planLimitsQueryKey,
+  userPlanQueryKey,
+} from '../api/planLimits';
 
 const DEMO_PERSONAL_WORKSPACE_ID = '0c93a3c6-7c5b-4f24-a413-2b142a4b6aaf' as const;
-
-const planLimitSeed: PlanLimitRecord[] = [
-  {
-    key: 'prompts_per_personal_ws',
-    value_int: 5,
-    value_str: null,
-    value_json: null,
-  },
-];
-
-const planLimitMap = indexPlanLimits(planLimitSeed);
+const PROMPTS_PER_PERSONAL_WS_LIMIT_KEY = 'prompts_per_personal_ws';
 
 const promptSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -69,6 +64,51 @@ export const PromptsPage = () => {
     enabled: !!userId,
     retry: false,
   });
+
+  const userPlanQuery = useQuery({
+    queryKey: userPlanQueryKey(userId ?? null),
+    queryFn: () =>
+      userId
+        ? fetchUserPlanId({ userId })
+        : Promise.reject(new Error('Cannot determine plan without a user.')),
+    enabled: !!userId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const planId = userPlanQuery.data ?? null;
+
+  const planLimitsQueryKeyValue = React.useMemo(
+    () => (planId ? planLimitsQueryKey(planId) : null),
+    [planId],
+  );
+
+  const planLimitsQuery = useQuery({
+    queryKey: planLimitsQueryKeyValue ?? (['plan-limits', 'unknown-plan'] as const),
+    queryFn: () =>
+      planId
+        ? fetchPlanLimits({ planId })
+        : Promise.reject(new Error('Plan ID is required to load plan limits.')),
+    enabled: !!planId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const lastPlanContextRef = React.useRef<{ planId: string; workspaceId: string } | null>(null);
+
+  React.useEffect(() => {
+    if (!planId) {
+      lastPlanContextRef.current = null;
+      return;
+    }
+
+    const workspaceId = promptsKey[1];
+    const lastContext = lastPlanContextRef.current;
+
+    lastPlanContextRef.current = { planId, workspaceId };
+
+    if (lastContext && (lastContext.planId !== planId || lastContext.workspaceId !== workspaceId)) {
+      queryClient.invalidateQueries({ queryKey: planLimitsQueryKey(planId) });
+    }
+  }, [planId, promptsKey, queryClient]);
 
   const hasMountedRef = React.useRef(false);
 
@@ -154,9 +194,16 @@ export const PromptsPage = () => {
 
   const handleSubmit = form.handleSubmit(async (values) => {
     const currentUsage = (queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? prompts).length;
+    const planLimits = planLimitsQuery.data as PlanLimitMap | undefined;
+
+    if (!planLimits) {
+      setLastEvaluation(null);
+      return;
+    }
+
     const evaluation = evaluateIntegerPlanLimit({
-      limits: planLimitMap,
-      key: 'prompts_per_personal_ws',
+      limits: planLimits,
+      key: PROMPTS_PER_PERSONAL_WS_LIMIT_KEY,
       currentUsage,
     });
 
@@ -250,6 +297,24 @@ export const PromptsPage = () => {
   const isLoading = promptsQuery.status === 'pending' && prompts.length === 0;
   const isError = simulateError || promptsQuery.status === 'error';
   const isEmpty = serverPrompts.length === 0 && promptsQuery.status === 'success';
+  const isPlanLimitLoading = planLimitsQuery.status === 'pending';
+  const planLimitError = planLimitsQuery.status === 'error';
+  const planLimitRecord = planLimitsQuery.data?.[PROMPTS_PER_PERSONAL_WS_LIMIT_KEY] ?? null;
+  const planLimitValueLabel = React.useMemo(() => {
+    if (isPlanLimitLoading) {
+      return 'Checking plan limits…';
+    }
+
+    if (planLimitError) {
+      return 'Plan limit unavailable';
+    }
+
+    if (!planLimitRecord) {
+      return 'Plan limit missing';
+    }
+
+    return `Plan limit: ${planLimitRecord.value_int ?? 'Unlimited'} prompts`;
+  }, [isPlanLimitLoading, planLimitError, planLimitRecord]);
 
   return (
     <section className="space-y-6">
@@ -328,7 +393,7 @@ export const PromptsPage = () => {
             </div>
 
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Plan limit: {planLimitSeed[0].value_int ?? 'Unlimited'} prompts</span>
+              <span>{planLimitValueLabel}</span>
               {lastEvaluation && lastEvaluation.shouldRecommendUpgrade ? (
                 <button
                   type="button"
@@ -340,9 +405,21 @@ export const PromptsPage = () => {
               ) : null}
             </div>
 
+            {planLimitError ? (
+              <p className="text-xs text-destructive">Failed to load plan limits. Please try again.</p>
+            ) : null}
+
             <Button
               type="submit"
-              disabled={!userId || isLoading || createPromptMutation.isPending || simulateError}
+              disabled={
+                !userId ||
+                isLoading ||
+                createPromptMutation.isPending ||
+                simulateError ||
+                isPlanLimitLoading ||
+                planLimitError ||
+                !planLimitRecord
+              }
             >
               {createPromptMutation.isPending
                 ? 'Saving…'
@@ -352,6 +429,12 @@ export const PromptsPage = () => {
                 ? 'Sign in to create prompts'
                 : simulateError
                 ? 'Unavailable during error simulation'
+                : isPlanLimitLoading
+                ? 'Checking plan limits…'
+                : planLimitError
+                ? 'Plan limits unavailable'
+                : !planLimitRecord
+                ? 'Missing plan limit'
                 : 'Create prompt'}
             </Button>
           </form>
