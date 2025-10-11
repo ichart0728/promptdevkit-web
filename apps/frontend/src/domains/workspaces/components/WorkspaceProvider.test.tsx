@@ -12,12 +12,12 @@ vi.mock('@/domains/auth/hooks/useSessionQuery', () => ({
   useSessionQuery: vi.fn(),
 }));
 
-const fetchWorkspacesMock = vi.fn(async (_userId: string | null) => [] as Workspace[]);
+const fetchWorkspacesMock = vi.fn(async () => [] as Workspace[]);
 
 vi.mock('../api/workspaces', () => ({
-  workspacesQueryOptions: (userId: string | null) => ({
-    queryKey: ['workspaces', userId ?? 'anonymous'] as const,
-    queryFn: () => fetchWorkspacesMock(userId),
+    workspacesQueryOptions: (userId: string | null) => ({
+      queryKey: ['workspaces', userId ?? 'anonymous'] as const,
+      queryFn: () => fetchWorkspacesMock(),
   }),
 }));
 
