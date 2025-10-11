@@ -1,8 +1,9 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 
 import { Button } from '@/components/ui/button';
-import { WorkspaceSwitcher } from '@/components/common/WorkspaceSwitcher';
 import { AuthMenu } from '@/domains/auth/components/AuthMenu';
+import { WorkspaceSwitcher } from '@/components/common/WorkspaceSwitcher';
+import { CreateWorkspaceDialog } from '@/domains/workspaces/components/CreateWorkspaceDialog';
 
 const navigation = [
   { to: '/', label: 'Dashboard' },
@@ -36,7 +37,10 @@ export const RootLayout = () => {
                 );
               })}
             </nav>
-            <WorkspaceSwitcher />
+            <div className="flex items-center gap-2">
+              <WorkspaceSwitcher />
+              <CreateWorkspaceDialog />
+            </div>
             <AuthMenu />
           </div>
         </div>
