@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
@@ -6,12 +6,25 @@ import { vi } from 'vitest';
 import type { Prompt } from '@/domains/prompts/api/prompts';
 import { PromptsPage } from './PromptsPage';
 import { fetchPrompts, createPrompt } from '@/domains/prompts/api/prompts';
+import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimits';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
+
+vi.mock('@/components/common/UpgradeDialog', () => ({
+  UpgradeDialog: ({ open }: { open: boolean }) =>
+    open ? <div>Upgrade to unlock more capacity</div> : null,
+}));
 
 vi.mock('@/domains/prompts/api/prompts', () => ({
   promptsQueryKey: (workspaceId: string) => ['prompts', workspaceId] as const,
   fetchPrompts: vi.fn(),
   createPrompt: vi.fn(),
+}));
+
+vi.mock('@/domains/prompts/api/planLimits', () => ({
+  userPlanQueryKey: (userId: string | null) => ['user-plan', userId] as const,
+  planLimitsQueryKey: (planId: string) => ['plan-limits', planId] as const,
+  fetchUserPlanId: vi.fn(),
+  fetchPlanLimits: vi.fn(),
 }));
 
 vi.mock('@/domains/auth/hooks/useSessionQuery', () => ({
@@ -20,6 +33,8 @@ vi.mock('@/domains/auth/hooks/useSessionQuery', () => ({
 
 const fetchPromptsMock = vi.mocked(fetchPrompts);
 const createPromptMock = vi.mocked(createPrompt);
+const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
+const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
 const useSessionQueryMock = vi.mocked(useSessionQuery);
 
 const createTestQueryClient = () =>
@@ -55,6 +70,15 @@ describe('PromptsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useSessionQueryMock.mockReturnValue(buildSessionQueryValue());
+    fetchUserPlanIdMock.mockResolvedValue('free');
+    fetchPlanLimitsMock.mockResolvedValue({
+      prompts_per_personal_ws: {
+        key: 'prompts_per_personal_ws',
+        value_int: 20,
+        value_str: null,
+        value_json: null,
+      },
+    });
   });
 
   afterEach(() => {
@@ -112,15 +136,15 @@ describe('PromptsPage', () => {
 
     renderPromptsPage();
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Create prompt' })).toBeInTheDocument();
-    });
+    await screen.findByRole('button', { name: 'Create prompt' });
 
     await user.type(screen.getByLabelText('Title'), 'New prompt');
     await user.type(screen.getByLabelText('Prompt body'), 'Generate a project summary.');
     await user.type(screen.getByLabelText('Tags'), 'summary, weekly');
 
-    await user.click(screen.getByRole('button', { name: 'Create prompt' }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Create prompt' }));
+    });
 
     await screen.findByText('(saving…)');
     expect(createPromptMock).toHaveBeenCalledWith({
@@ -148,5 +172,73 @@ describe('PromptsPage', () => {
 
     await screen.findByRole('heading', { level: 3, name: 'New prompt' });
     await screen.findByText('#summary');
+  });
+
+  it('recommends an upgrade when the prompt limit is reached', async () => {
+    fetchPromptsMock.mockResolvedValue([]);
+    fetchPlanLimitsMock.mockResolvedValue({
+      prompts_per_personal_ws: {
+        key: 'prompts_per_personal_ws',
+        value_int: 1,
+        value_str: null,
+        value_json: null,
+      },
+    });
+    const user = userEvent.setup();
+
+    createPromptMock.mockResolvedValue({
+      id: 'prompt-1',
+      title: 'Edge case',
+      body: 'Body',
+      tags: [],
+    });
+
+    renderPromptsPage();
+
+    await screen.findByRole('button', { name: 'Create prompt' });
+
+    await user.type(screen.getByLabelText('Title'), 'Edge case');
+    await user.type(screen.getByLabelText('Prompt body'), 'Body');
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Create prompt' }));
+    });
+
+    await screen.findByRole('button', { name: 'Why upgrade?' });
+    expect(createPromptMock).toHaveBeenCalled();
+  });
+
+  it('opens the upgrade dialog when the prompt limit is exceeded', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'existing',
+        title: 'Existing prompt',
+        body: 'Existing body',
+        tags: [],
+      },
+    ]);
+    fetchPlanLimitsMock.mockResolvedValue({
+      prompts_per_personal_ws: {
+        key: 'prompts_per_personal_ws',
+        value_int: 1,
+        value_str: null,
+        value_json: null,
+      },
+    });
+    const user = userEvent.setup();
+
+    renderPromptsPage();
+
+    await screen.findByRole('button', { name: 'Create prompt' });
+
+    await user.type(screen.getByLabelText('Title'), 'Over limit');
+    await user.type(screen.getByLabelText('Prompt body'), 'Body');
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Create prompt' }));
+    });
+
+    await screen.findByText('Upgrade to unlock more capacity');
+    expect(createPromptMock).not.toHaveBeenCalled();
   });
 });
