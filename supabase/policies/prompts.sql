@@ -1,4 +1,7 @@
 -- RLS policies for public.prompts
+-- NOTE: Inserts are additionally checked by trigger public.enforce_prompt_plan_limits().
+-- It raises SQLSTATE P0001 with DETAIL 'limit=<int> current=<int> remaining=<int> plan=<text> workspace_id=<uuid>'
+-- and HINT 'Reduce prompts in this workspace or upgrade the subscription plan.' when the plan limit is exceeded.
 ALTER TABLE public.prompts ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY select_prompts_on_accessible_workspaces
