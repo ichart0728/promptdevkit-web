@@ -76,6 +76,9 @@ export const PromptsPage = () => {
   });
 
   const planId = userPlanQuery.data ?? null;
+  const isPlanLookupLoading = userPlanQuery.status === 'pending';
+  const planLookupError = userPlanQuery.status === 'error';
+  const planLookupErrorMessage = planLookupError ? userPlanQuery.error?.message : null;
 
   const planLimitsQueryKeyValue = React.useMemo(
     () => (planId ? planLimitsQueryKey(planId) : null),
@@ -297,12 +300,16 @@ export const PromptsPage = () => {
   const isLoading = promptsQuery.status === 'pending' && prompts.length === 0;
   const isError = simulateError || promptsQuery.status === 'error';
   const isEmpty = serverPrompts.length === 0 && promptsQuery.status === 'success';
-  const isPlanLimitLoading = planLimitsQuery.status === 'pending';
+  const isPlanLimitLoading = planId ? planLimitsQuery.status === 'pending' : isPlanLookupLoading;
   const planLimitError = planLimitsQuery.status === 'error';
   const planLimitRecord = planLimitsQuery.data?.[PROMPTS_PER_PERSONAL_WS_LIMIT_KEY] ?? null;
   const planLimitValueLabel = React.useMemo(() => {
     if (isPlanLimitLoading) {
       return 'Checking plan limits…';
+    }
+
+    if (planLookupError) {
+      return 'Plan lookup failed';
     }
 
     if (planLimitError) {
@@ -314,7 +321,7 @@ export const PromptsPage = () => {
     }
 
     return `Plan limit: ${planLimitRecord.value_int ?? 'Unlimited'} prompts`;
-  }, [isPlanLimitLoading, planLimitError, planLimitRecord]);
+  }, [isPlanLimitLoading, planLookupError, planLimitError, planLimitRecord]);
 
   return (
     <section className="space-y-6">
@@ -405,6 +412,22 @@ export const PromptsPage = () => {
               ) : null}
             </div>
 
+            {planLookupError ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-destructive">
+                <p className="flex-1">
+                  Failed to load your plan. {planLookupErrorMessage ?? 'Please try again.'}
+                </p>
+                <button
+                  type="button"
+                  className="text-xs font-medium text-primary hover:underline"
+                  onClick={() => userPlanQuery.refetch()}
+                  disabled={isPlanLookupLoading}
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
+
             {planLimitError ? (
               <p className="text-xs text-destructive">Failed to load plan limits. Please try again.</p>
             ) : null}
@@ -417,6 +440,7 @@ export const PromptsPage = () => {
                 createPromptMutation.isPending ||
                 simulateError ||
                 isPlanLimitLoading ||
+                planLookupError ||
                 planLimitError ||
                 !planLimitRecord
               }
@@ -431,6 +455,8 @@ export const PromptsPage = () => {
                 ? 'Unavailable during error simulation'
                 : isPlanLimitLoading
                 ? 'Checking plan limits…'
+                : planLookupError
+                ? 'Plan lookup failed'
                 : planLimitError
                 ? 'Plan limits unavailable'
                 : !planLimitRecord
