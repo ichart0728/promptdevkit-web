@@ -41,6 +41,9 @@ BEGIN
 END;
 $$;
 
+-- Restrict execution to internal callers so tenants cannot probe workspace plans
+REVOKE EXECUTE ON FUNCTION public.resolve_workspace_plan_id(uuid) FROM PUBLIC;
+
 -- Trigger function that records prompt versions after insert/update and enforces per-prompt limits
 CREATE OR REPLACE FUNCTION public.log_prompt_version_history()
 RETURNS trigger
