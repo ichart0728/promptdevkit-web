@@ -106,6 +106,11 @@ INSERT INTO auth.users (
   encrypted_password,
   email_confirmed_at,
   invited_at,
+  confirmation_sent_at,
+  confirmation_token,
+  recovery_token,
+  email_change_token_current,
+  email_change_token_new,
   created_at,
   updated_at,
   last_sign_in_at,
@@ -115,29 +120,39 @@ INSERT INTO auth.users (
 )
 SELECT
   s.id,
-  '00000000-0000-0000-0000-000000000000'::uuid,
+  (
+    SELECT id
+    FROM auth.instances
+    ORDER BY created_at
+    LIMIT 1
+  ),
   s.aud,
   s.role,
   s.email,
   crypt(s.password, gen_salt('bf')),
-  s.email_confirmed_at,
+  now(),
   s.invited_at,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
   s.created_at,
-  s.last_sign_in_at,
+  now(),
   s.last_sign_in_at,
   s.raw_app_meta,
   s.raw_user_meta,
   false
 FROM auth_user_seed s
-ON CONFLICT (id) DO UPDATE
+ON CONFLICT (email, instance_id) DO UPDATE
 SET
-  instance_id = EXCLUDED.instance_id,
   aud = EXCLUDED.aud,
   role = EXCLUDED.role,
   email = EXCLUDED.email,
   encrypted_password = EXCLUDED.encrypted_password,
   email_confirmed_at = EXCLUDED.email_confirmed_at,
   invited_at = EXCLUDED.invited_at,
+  confirmation_sent_at = EXCLUDED.confirmation_sent_at,
   created_at = EXCLUDED.created_at,
   updated_at = EXCLUDED.updated_at,
   last_sign_in_at = EXCLUDED.last_sign_in_at,
@@ -209,7 +224,8 @@ INSERT INTO auth.identities (
   provider,
   last_sign_in_at,
   created_at,
-  updated_at
+  updated_at,
+  instance_id
 )
 SELECT
   s.email,
@@ -218,9 +234,15 @@ SELECT
   'email',
   s.last_sign_in_at,
   s.created_at,
-  s.last_sign_in_at
+  s.last_sign_in_at,
+  (
+    SELECT id
+    FROM auth.instances
+    ORDER BY created_at
+    LIMIT 1
+  )
 FROM auth_user_seed s
-ON CONFLICT (provider, provider_id) DO UPDATE
+ON CONFLICT (provider, provider_id, instance_id) DO UPDATE
 SET
   user_id = EXCLUDED.user_id,
   identity_data = EXCLUDED.identity_data,
