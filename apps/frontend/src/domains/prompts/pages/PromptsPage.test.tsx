@@ -1,17 +1,17 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 
 import type { Prompt } from '@/domains/prompts/api/prompts';
 import { PromptsPage } from './PromptsPage';
-import { fetchPrompts, createPrompt } from '@/domains/prompts/api/prompts';
+import { fetchPrompts, createPrompt, deletePrompt } from '@/domains/prompts/api/prompts';
 import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimits';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useActiveWorkspace } from '@/domains/workspaces/hooks/useActiveWorkspace';
 
 vi.mock('@/components/common/UpgradeDialog', () => ({
-  UpgradeDialog: ({ open }: { open: boolean }) =>
+  UpgradeDialog: ({ open }: { open: boolean; onResetEvaluation?: () => void }) =>
     open ? <div>Upgrade to unlock more capacity</div> : null,
 }));
 
@@ -19,6 +19,7 @@ vi.mock('@/domains/prompts/api/prompts', () => ({
   promptsQueryKey: (workspaceId: string) => ['prompts', workspaceId] as const,
   fetchPrompts: vi.fn(),
   createPrompt: vi.fn(),
+  deletePrompt: vi.fn(),
 }));
 
 vi.mock('@/domains/prompts/api/planLimits', () => ({
@@ -37,6 +38,7 @@ vi.mock('@/domains/workspaces/hooks/useActiveWorkspace', () => ({
 
 const fetchPromptsMock = vi.mocked(fetchPrompts);
 const createPromptMock = vi.mocked(createPrompt);
+const deletePromptMock = vi.mocked(deletePrompt);
 const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
 const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
 const useSessionQueryMock = vi.mocked(useSessionQuery);
@@ -94,6 +96,7 @@ describe('PromptsPage', () => {
     activeWorkspaceRef = { current: personalWorkspace };
     useActiveWorkspaceMock.mockImplementation(() => activeWorkspaceRef.current);
     fetchUserPlanIdMock.mockResolvedValue('free');
+    deletePromptMock.mockResolvedValue('prompt-1');
     fetchPlanLimitsMock.mockResolvedValue({
       prompts_per_personal_ws: {
         key: 'prompts_per_personal_ws',
@@ -282,6 +285,76 @@ describe('PromptsPage', () => {
     await screen.findByText('Upgrade to unlock more capacity');
     expect(createPromptMock).not.toHaveBeenCalled();
   });
+
+  it('deletes a prompt and updates plan usage counts and evaluation state', async () => {
+    fetchPromptsMock.mockResolvedValueOnce([
+      {
+        id: 'prompt-1',
+        title: 'Existing prompt',
+        body: 'Existing body',
+        tags: [],
+      },
+    ]);
+    fetchPromptsMock.mockResolvedValue([]);
+    fetchPlanLimitsMock.mockResolvedValue({
+      prompts_per_personal_ws: {
+        key: 'prompts_per_personal_ws',
+        value_int: 1,
+        value_str: null,
+        value_json: null,
+      },
+      prompts_per_team_ws: {
+        key: 'prompts_per_team_ws',
+        value_int: 5,
+        value_str: null,
+        value_json: null,
+      },
+    });
+    deletePromptMock.mockResolvedValueOnce('prompt-1');
+    const user = userEvent.setup();
+
+    renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Existing prompt' });
+    await screen.findByText('Current usage in Personal Space: 1 of 1 prompts');
+
+    await user.type(screen.getByLabelText('Title'), 'Second prompt');
+    await user.type(screen.getByLabelText('Prompt body'), 'Body');
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Create prompt' }));
+    });
+
+    await screen.findByRole('button', { name: 'Why upgrade?' });
+
+    await user.click(screen.getByRole('button', { name: 'Delete prompt Existing prompt' }));
+
+    const dialog = await screen.findByRole('dialog');
+
+    await act(async () => {
+      await user.click(within(dialog).getByRole('button', { name: 'Delete prompt' }));
+    });
+
+    await waitFor(() => {
+      expect(deletePromptMock).toHaveBeenCalledWith({
+        workspace: personalWorkspace,
+        userId: 'user-1',
+        promptId: 'prompt-1',
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Current usage in Personal Space: 0 of 1 prompts'),
+      ).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { level: 3, name: 'Existing prompt' })).not.toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole('button', { name: 'Why upgrade?' })).not.toBeInTheDocument();
+  });
 });
 
 describe('PromptsPage workspace awareness', () => {
@@ -291,6 +364,7 @@ describe('PromptsPage workspace awareness', () => {
     activeWorkspaceRef = { current: personalWorkspace };
     useActiveWorkspaceMock.mockImplementation(() => activeWorkspaceRef.current);
     fetchUserPlanIdMock.mockResolvedValue('free');
+    deletePromptMock.mockResolvedValue('prompt-1');
     fetchPlanLimitsMock.mockResolvedValue({
       prompts_per_personal_ws: {
         key: 'prompts_per_personal_ws',
@@ -317,7 +391,7 @@ describe('PromptsPage workspace awareness', () => {
     renderPromptsPage();
 
     await screen.findByText('Workspace: Personal Space');
-    await screen.findByText('Plan limit for Personal Space: 2 prompts');
+    await screen.findByText('Current usage in Personal Space: 0 of 2 prompts');
   });
 
   it('switches plan limit keys when the active workspace changes', async () => {
@@ -325,7 +399,7 @@ describe('PromptsPage workspace awareness', () => {
 
     const { rerender, queryClient } = renderPromptsPage();
 
-    await screen.findByText('Plan limit for Personal Space: 2 prompts');
+    await screen.findByText('Current usage in Personal Space: 0 of 2 prompts');
     expect(fetchPromptsMock).toHaveBeenLastCalledWith({ workspace: personalWorkspace });
 
     activeWorkspaceRef.current = teamWorkspace;
@@ -341,6 +415,6 @@ describe('PromptsPage workspace awareness', () => {
 
     await screen.findByText('Team workspace');
     expect(fetchPromptsMock).toHaveBeenLastCalledWith({ workspace: teamWorkspace });
-    await screen.findByText('Plan limit for Team Space: 1 prompts');
+    await screen.findByText('Current usage in Team Space: 0 of 1 prompts');
   });
 });

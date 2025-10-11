@@ -15,9 +15,15 @@ type UpgradeDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   evaluation?: IntegerPlanLimitEvaluation | null;
+  onResetEvaluation?: () => void;
 };
 
-export const UpgradeDialog: React.FC<UpgradeDialogProps> = ({ open, onOpenChange, evaluation }) => {
+export const UpgradeDialog: React.FC<UpgradeDialogProps> = ({
+  open,
+  onOpenChange,
+  evaluation,
+  onResetEvaluation,
+}) => {
   const limitLabel = React.useMemo(() => {
     if (!evaluation) {
       return 'your current plan';
@@ -31,8 +37,21 @@ export const UpgradeDialog: React.FC<UpgradeDialogProps> = ({ open, onOpenChange
     return `${baseLabel} (${evaluation.limitValue.toLocaleString()} max)`;
   }, [evaluation]);
 
+  const handleDialogChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      onResetEvaluation?.();
+    }
+
+    onOpenChange(nextOpen);
+  };
+
+  const handleClose = () => {
+    onResetEvaluation?.();
+    onOpenChange(false);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Upgrade to unlock more capacity</DialogTitle>
@@ -67,7 +86,7 @@ export const UpgradeDialog: React.FC<UpgradeDialogProps> = ({ open, onOpenChange
           </p>
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={handleClose}>
             Close
           </Button>
           <Button type="button" disabled>
