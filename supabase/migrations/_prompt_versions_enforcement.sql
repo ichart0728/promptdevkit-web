@@ -64,6 +64,13 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- Allow soft deletes to bypass version logging and limit checks since rows
+  -- will be cascaded shortly after the `deleted_at` flag is set. Without this
+  -- guard, prompts that already reached the plan limit could not be deleted.
+  IF TG_OP = 'UPDATE' AND NEW.deleted_at IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
   v_plan_id := public.resolve_workspace_plan_id(NEW.workspace_id);
 
   SELECT pl.value_int
