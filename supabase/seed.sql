@@ -1,5 +1,5 @@
 -- NOTE: Supabase CLI executes this file directly via the Postgres server, so
--- psql meta-commands like "\\i" are not supported here. Consolidate the seed
+-- psql meta-commands like "\i" are not supported here. Consolidate the seed
 -- statements from the individual files instead.
 
 -- Source: seed/001_plans.sql
@@ -40,6 +40,8 @@ SET
 
 -- Source: seed/003_demo_users.sql
 -- Ensure auth and public user records stay aligned with demo plans
+
+-- === Demo auth.users + identities ===
 WITH auth_user_seed AS (
   SELECT * FROM (
     VALUES
@@ -82,7 +84,6 @@ WITH auth_user_seed AS (
         jsonb_build_object('provider', 'email', 'providers', ARRAY['email']),
         jsonb_build_object('name', 'Team Member')
       )
-
   ) AS t(
     id,
     email,
@@ -96,137 +97,84 @@ WITH auth_user_seed AS (
     raw_app_meta,
     raw_user_meta
   )
+),
+inst AS (
+  SELECT id FROM auth.instances ORDER BY created_at LIMIT 1
 )
+
 INSERT INTO auth.users (
-  id,
-  instance_id,
-  aud,
-  role,
-  email,
-  encrypted_password,
-  email_confirmed_at,
-  invited_at,
-  created_at,
-  updated_at,
-  last_sign_in_at,
-  raw_app_meta_data,
-  raw_user_meta_data,
-  is_super_admin
+  id, instance_id, aud, role, email, encrypted_password,
+  email_confirmed_at, invited_at, confirmation_sent_at,
+  confirmation_token, recovery_token,
+  email_change,              -- ★ 追加
+  email_change_sent_at,      -- ★ 追加
+  email_change_token_current, email_change_token_new,
+  created_at, updated_at, last_sign_in_at,
+  raw_app_meta_data, raw_user_meta_data, is_super_admin
 )
 SELECT
   s.id,
-  '00000000-0000-0000-0000-000000000000'::uuid,
-  s.aud,
-  s.role,
-  s.email,
+  COALESCE((SELECT id FROM inst), '00000000-0000-0000-0000-000000000000'::uuid),
+  'authenticated','authenticated', s.email,
   crypt(s.password, gen_salt('bf')),
-  s.email_confirmed_at,
-  s.invited_at,
-  s.created_at,
-  s.last_sign_in_at,
-  s.last_sign_in_at,
-  s.raw_app_meta,
-  s.raw_user_meta,
-  false
+  now(), s.invited_at,
+  now(),                                -- confirmation_sent_at（非NULL）
+  'seed-' || s.id::text,                -- confirmation_token（非NULL）
+  'seed-rec-' || s.id::text,            -- recovery_token（非NULL）
+  ''::text,                             -- ★ email_change を空文字に
+  NULL,                                 -- ★ email_change_sent_at は NULL
+  'seed-ecc-' || s.id::text,            -- email_change_token_current（非NULL）
+  'seed-ecn-' || s.id::text,            -- email_change_token_new（非NULL）
+  s.created_at, now(), s.last_sign_in_at,
+  s.raw_app_meta, s.raw_user_meta, false
 FROM auth_user_seed s
 ON CONFLICT (id) DO UPDATE
 SET
-  instance_id = EXCLUDED.instance_id,
   aud = EXCLUDED.aud,
   role = EXCLUDED.role,
   email = EXCLUDED.email,
   encrypted_password = EXCLUDED.encrypted_password,
   email_confirmed_at = EXCLUDED.email_confirmed_at,
   invited_at = EXCLUDED.invited_at,
-  created_at = EXCLUDED.created_at,
+  confirmation_sent_at = EXCLUDED.confirmation_sent_at,
   updated_at = EXCLUDED.updated_at,
   last_sign_in_at = EXCLUDED.last_sign_in_at,
   raw_app_meta_data = EXCLUDED.raw_app_meta_data,
   raw_user_meta_data = EXCLUDED.raw_user_meta_data,
   is_super_admin = EXCLUDED.is_super_admin;
 
-WITH auth_user_seed AS (
-  SELECT * FROM (
-    VALUES
-      (
-        '11111111-1111-4111-8111-111111111111'::uuid,
-        'demo.user@example.com'::text,
-        'DemoPass123!'::text,
-        'authenticated'::text,
-        'authenticated'::text,
-        '2024-01-02 09:00:00+00'::timestamptz,
-        '2024-01-01 08:30:00+00'::timestamptz,
-        '2024-01-01 08:30:00+00'::timestamptz,
-        '2024-01-15 10:00:00+00'::timestamptz,
-        jsonb_build_object('provider', 'email', 'providers', ARRAY['email']),
-        jsonb_build_object('name', 'Demo User')
-      ),
-      (
-        '22222222-2222-4222-8222-222222222222'::uuid,
-        'team.owner@example.com'::text,
-        'DemoPass123!'::text,
-        'authenticated'::text,
-        'authenticated'::text,
-        '2024-01-02 09:10:00+00'::timestamptz,
-        '2024-01-01 08:40:00+00'::timestamptz,
-        '2024-01-01 08:40:00+00'::timestamptz,
-        '2024-01-16 10:00:00+00'::timestamptz,
-        jsonb_build_object('provider', 'email', 'providers', ARRAY['email']),
-        jsonb_build_object('name', 'Team Owner')
-      ),
-      (
-        '33333333-3333-4333-8333-333333333333'::uuid,
-        'team.member@example.com'::text,
-        'DemoPass123!'::text,
-        'authenticated'::text,
-        'authenticated'::text,
-        '2024-01-02 09:20:00+00'::timestamptz,
-        '2024-01-01 08:50:00+00'::timestamptz,
-        '2024-01-01 08:50:00+00'::timestamptz,
-        '2024-01-16 11:00:00+00'::timestamptz,
-        jsonb_build_object('provider', 'email', 'providers', ARRAY['email']),
-        jsonb_build_object('name', 'Team Member')
-      )
 
-  ) AS t(
-    id,
-    email,
-    password,
-    aud,
-    role,
-    email_confirmed_at,
-    invited_at,
-    created_at,
-    last_sign_in_at,
-    raw_app_meta,
-    raw_user_meta
-  )
+
+-- identities: update-then-insert to avoid ON CONFLICT constraint mismatch across schemas
+WITH target_users AS (
+  SELECT id, email FROM auth.users
+  WHERE email IN ('demo.user@example.com','team.owner@example.com','team.member@example.com')
+),
+upd AS (
+  UPDATE auth.identities i
+  SET user_id = u.id,
+      identity_data = jsonb_build_object('email', u.email, 'sub', u.id::text),
+      last_sign_in_at = now(),
+      updated_at = now()
+  FROM target_users u
+  WHERE i.provider = 'email' AND i.provider_id = u.email
+  RETURNING 1
 )
 INSERT INTO auth.identities (
-  provider_id,
-  user_id,
-  identity_data,
-  provider,
-  last_sign_in_at,
-  created_at,
-  updated_at
+  provider_id, user_id, identity_data, provider,
+  last_sign_in_at, created_at, updated_at
 )
 SELECT
-  s.email,
-  s.id,
-  jsonb_build_object('sub', s.id::text, 'email', s.email),
-  'email',
-  s.last_sign_in_at,
-  s.created_at,
-  s.last_sign_in_at
-FROM auth_user_seed s
-ON CONFLICT (provider, provider_id) DO UPDATE
-SET
-  user_id = EXCLUDED.user_id,
-  identity_data = EXCLUDED.identity_data,
-  last_sign_in_at = EXCLUDED.last_sign_in_at,
-  updated_at = EXCLUDED.updated_at;
+  u.email, u.id,
+  jsonb_build_object('email', u.email, 'sub', u.id::text),
+  'email', now(), now(), now()
+FROM target_users u
+WHERE NOT EXISTS (
+  SELECT 1 FROM auth.identities i
+  WHERE i.provider = 'email' AND i.provider_id = u.email
+);
 
+-- === Demo public.users ===
 WITH user_seed AS (
   SELECT * FROM (
     VALUES
@@ -257,7 +205,6 @@ WITH user_seed AS (
         '2024-01-16 11:05:00+00'::timestamptz,
         'free'::text
       )
-
   ) AS t(
     id,
     email,
@@ -284,6 +231,7 @@ SET
   avatar_url = EXCLUDED.avatar_url,
   updated_at = EXCLUDED.updated_at;
 
+-- Link users to plans
 WITH user_seed AS (
   SELECT * FROM (
     VALUES
@@ -314,7 +262,6 @@ WITH user_seed AS (
         '2024-01-16 11:05:00+00'::timestamptz,
         'free'::text
       )
-
   ) AS t(
     id,
     email,
@@ -338,6 +285,8 @@ SET
 
 -- Source: seed/004_demo_workspaces.sql
 -- Provide a personal workspace and a collaborative team setup with prompts
+
+-- teams
 WITH team_seed AS (
   SELECT * FROM (
     VALUES (
@@ -361,6 +310,7 @@ SET
   created_by = EXCLUDED.created_by,
   created_at = EXCLUDED.created_at;
 
+-- team_members
 WITH member_seed AS (
   SELECT * FROM (
     VALUES
@@ -400,6 +350,7 @@ SET
   role = EXCLUDED.role,
   joined_at = EXCLUDED.joined_at;
 
+-- workspaces
 WITH workspace_seed AS (
   SELECT * FROM (
     VALUES
@@ -438,6 +389,7 @@ SET
   name = EXCLUDED.name,
   created_at = EXCLUDED.created_at;
 
+-- prompts
 WITH prompt_seed AS (
   SELECT * FROM (
     VALUES
@@ -518,6 +470,7 @@ SET
   updated_at = EXCLUDED.updated_at,
   deleted_at = EXCLUDED.deleted_at;
 
+-- prompt_versions
 WITH version_seed AS (
   SELECT * FROM (
     VALUES
