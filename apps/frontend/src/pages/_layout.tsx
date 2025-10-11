@@ -1,6 +1,7 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 
 import { Button } from '@/components/ui/button';
+import { WorkspaceSwitcher } from '@/components/common/WorkspaceSwitcher';
 import { AuthMenu } from '@/domains/auth/components/AuthMenu';
 
 const navigation = [
@@ -35,6 +36,7 @@ export const RootLayout = () => {
                 );
               })}
             </nav>
+            <WorkspaceSwitcher />
             <AuthMenu />
           </div>
         </div>

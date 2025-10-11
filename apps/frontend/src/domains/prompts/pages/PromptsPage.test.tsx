@@ -8,6 +8,7 @@ import { PromptsPage } from './PromptsPage';
 import { fetchPrompts, createPrompt } from '@/domains/prompts/api/prompts';
 import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimits';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
+import { useActiveWorkspace } from '@/domains/workspaces/hooks/useActiveWorkspace';
 
 vi.mock('@/components/common/UpgradeDialog', () => ({
   UpgradeDialog: ({ open }: { open: boolean }) =>
@@ -30,12 +31,16 @@ vi.mock('@/domains/prompts/api/planLimits', () => ({
 vi.mock('@/domains/auth/hooks/useSessionQuery', () => ({
   useSessionQuery: vi.fn(),
 }));
+vi.mock('@/domains/workspaces/hooks/useActiveWorkspace', () => ({
+  useActiveWorkspace: vi.fn(),
+}));
 
 const fetchPromptsMock = vi.mocked(fetchPrompts);
 const createPromptMock = vi.mocked(createPrompt);
 const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
 const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
 const useSessionQueryMock = vi.mocked(useSessionQuery);
+const useActiveWorkspaceMock = vi.mocked(useActiveWorkspace);
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -66,10 +71,18 @@ const buildSessionQueryValue = (
     ...overrides,
   } as unknown as ReturnType<typeof useSessionQuery>);
 
+const workspace = {
+  id: 'workspace-1',
+  name: 'Personal',
+  type: 'personal' as const,
+  teamId: null,
+};
+
 describe('PromptsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useSessionQueryMock.mockReturnValue(buildSessionQueryValue());
+    useActiveWorkspaceMock.mockReturnValue(workspace);
     fetchUserPlanIdMock.mockResolvedValue('free');
     fetchPlanLimitsMock.mockResolvedValue({
       prompts_per_personal_ws: {
@@ -148,7 +161,7 @@ describe('PromptsPage', () => {
 
     await screen.findByText('(saving…)');
     expect(createPromptMock).toHaveBeenCalledWith({
-      workspaceId: '0c93a3c6-7c5b-4f24-a413-2b142a4b6aaf',
+      workspaceId: workspace.id,
       userId: 'user-1',
       title: 'New prompt',
       body: 'Generate a project summary.',
