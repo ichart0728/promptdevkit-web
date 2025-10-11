@@ -58,6 +58,7 @@ CREATE POLICY delete_prompt_versions_on_accessible_workspaces
                     WHERE w.id = p.workspace_id
                       AND w.type = 'team'
                       AND tm.user_id = auth.uid()
+                      AND tm.role IN ('admin', 'editor')
                 )
               )
         )
