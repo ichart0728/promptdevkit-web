@@ -15,7 +15,7 @@ const baseContext: ContextValue = {
   isLoading: false,
   isError: false,
   error: null,
-  refetch: vi.fn(),
+  refetch: vi.fn().mockResolvedValue([]),
   hasSession: true,
 };
 

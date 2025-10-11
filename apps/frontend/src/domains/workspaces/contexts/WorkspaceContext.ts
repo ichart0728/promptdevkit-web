@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import type { Workspace } from '../api/workspaces';
 
-type RefetchFn = () => Promise<unknown>;
+type RefetchFn = () => Promise<Workspace[]>;
 
 export type WorkspaceContextValue = {
   workspaces: Workspace[];

@@ -3,9 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { workspacesQueryOptions } from '../api/workspaces';
+import type { Workspace } from '../api/workspaces';
 import { WorkspaceContext, type WorkspaceContextValue } from '../contexts/WorkspaceContext';
 
-const noopRefetch = async () => Promise.resolve();
+const noopRefetch = async () => Promise.resolve([]);
 
 export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) => {
   const sessionQuery = useSessionQuery();
@@ -16,6 +17,8 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
     ...workspacesQueryOptions(userId),
     enabled: hasSession,
   });
+
+  const { refetch: queryRefetch } = workspacesQuery;
 
   const workspaces = React.useMemo(() => (hasSession ? workspacesQuery.data ?? [] : []), [
     hasSession,
@@ -63,6 +66,20 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
     [workspaces, activeWorkspaceId],
   );
 
+  const refetchWorkspaces = React.useCallback(async (): Promise<Workspace[]> => {
+    if (!hasSession) {
+      return [];
+    }
+
+    const result = await queryRefetch();
+
+    if (result.error) {
+      throw result.error;
+    }
+
+    return (result.data ?? []) as Workspace[];
+  }, [hasSession, queryRefetch]);
+
   const contextValue = React.useMemo<WorkspaceContextValue>(
     () => ({
       workspaces,
@@ -71,7 +88,7 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
       isLoading: hasSession && workspacesQuery.isPending,
       isError: hasSession && workspacesQuery.status === 'error',
       error: hasSession && workspacesQuery.status === 'error' ? (workspacesQuery.error as Error) : null,
-      refetch: hasSession ? workspacesQuery.refetch : noopRefetch,
+      refetch: hasSession ? refetchWorkspaces : noopRefetch,
       hasSession,
     }),
     [
@@ -82,7 +99,7 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
       workspacesQuery.isPending,
       workspacesQuery.status,
       workspacesQuery.error,
-      workspacesQuery.refetch,
+      refetchWorkspaces,
     ],
   );
 
