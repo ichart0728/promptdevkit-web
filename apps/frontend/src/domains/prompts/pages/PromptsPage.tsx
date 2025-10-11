@@ -8,6 +8,14 @@ import { UpgradeDialog } from '@/components/common/UpgradeDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   evaluateIntegerPlanLimit,
   type IntegerPlanLimitEvaluation,
   type PlanLimitMap,
@@ -15,7 +23,7 @@ import {
 
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useActiveWorkspace } from '@/domains/workspaces/hooks/useActiveWorkspace';
-import { createPrompt, fetchPrompts, promptsQueryKey, type Prompt } from '../api/prompts';
+import { createPrompt, deletePrompt, fetchPrompts, promptsQueryKey, type Prompt } from '../api/prompts';
 import {
   fetchPlanLimits,
   fetchUserPlanId,
@@ -47,6 +55,11 @@ type OptimisticContext = {
   queryKey: ReturnType<typeof promptsQueryKey>;
 };
 
+type DeleteOptimisticContext = {
+  previousPrompts: PromptListItem[];
+  queryKey: ReturnType<typeof promptsQueryKey>;
+};
+
 const formatTags = (raw: string | undefined) =>
   raw?.split(',')
     .map((tag) => tag.trim())
@@ -62,6 +75,7 @@ export const PromptsPage = () => {
   const [simulateError, setSimulateError] = React.useState(false);
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
+  const [promptPendingDeletion, setPromptPendingDeletion] = React.useState<PromptListItem | null>(null);
 
   const workspaceId = activeWorkspace?.id ?? null;
   const workspaceType = activeWorkspace?.type ?? null;
@@ -213,6 +227,98 @@ export const PromptsPage = () => {
     },
   });
 
+  const deletePromptMutation = useMutation<string, Error, PromptListItem, DeleteOptimisticContext>({
+    mutationFn: async (prompt) => {
+      if (prompt.isOptimistic) {
+        throw new Error('Cannot delete a prompt while it is still saving.');
+      }
+
+      if (!userId) {
+        throw new Error('You must be signed in to delete prompts.');
+      }
+
+      if (!workspaceId || !activeWorkspace) {
+        throw new Error('You must select a workspace before deleting prompts.');
+      }
+
+      return deletePrompt({
+        workspace: activeWorkspace,
+        userId,
+        promptId: prompt.id,
+      });
+    },
+    onMutate: async (prompt) => {
+      if (!workspaceId) {
+        throw new Error('You must select a workspace before deleting prompts.');
+      }
+
+      const mutationQueryKey = promptsQueryKey(workspaceId);
+
+      await queryClient.cancelQueries({ queryKey: mutationQueryKey });
+      const previousPrompts = queryClient.getQueryData<PromptListItem[]>(mutationQueryKey) ?? [];
+
+      queryClient.setQueryData<PromptListItem[]>(
+        mutationQueryKey,
+        previousPrompts.filter((item) => item.id !== prompt.id),
+      );
+
+      return { previousPrompts, queryKey: mutationQueryKey } satisfies DeleteOptimisticContext;
+    },
+    onError: (_error, _prompt, context) => {
+      if (context) {
+        queryClient.setQueryData(context.queryKey, context.previousPrompts);
+      }
+    },
+    onSuccess: () => {
+      setLastEvaluation(null);
+      setUpgradeOpen(false);
+      setPromptPendingDeletion(null);
+    },
+    onSettled: (_data, _error, _prompt, context) => {
+      if (context) {
+        queryClient.invalidateQueries({ queryKey: context.queryKey });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: promptsKey });
+    },
+  });
+
+  const handlePromptDeleteClick = (prompt: PromptListItem) => {
+    if (prompt.isOptimistic) {
+      return;
+    }
+
+    deletePromptMutation.reset();
+    setPromptPendingDeletion(prompt);
+  };
+
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    if (open) {
+      return;
+    }
+
+    if (deletePromptMutation.isPending) {
+      return;
+    }
+
+    setPromptPendingDeletion(null);
+    deletePromptMutation.reset();
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!promptPendingDeletion) {
+      return;
+    }
+
+    deletePromptMutation.reset();
+    try {
+      await deletePromptMutation.mutateAsync(promptPendingDeletion);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const form = useForm<PromptFormValues>({
     resolver: zodResolver(promptSchema),
     defaultValues: {
@@ -225,6 +331,7 @@ export const PromptsPage = () => {
   const cachedPrompts = queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? [];
   const serverPrompts = (promptsQuery.data ?? []) as PromptListItem[];
   const prompts = cachedPrompts.length ? cachedPrompts : serverPrompts;
+  const currentUsage = prompts.length;
 
   const handleUpgradeDialogChange = (open: boolean) => {
     setUpgradeOpen(open);
@@ -318,16 +425,29 @@ export const PromptsPage = () => {
       <ul className="space-y-3">
         {prompts.map((prompt) => (
           <li key={prompt.id} className="rounded-md border bg-card p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  {prompt.title}
-                  {prompt.isOptimistic ? (
-                    <span className="ml-2 text-xs uppercase text-muted-foreground">(saving…)</span>
-                  ) : null}
-                </h3>
-                <p className="mt-2 text-sm text-muted-foreground">{prompt.body}</p>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold text-foreground">
+                    {prompt.title}
+                    {prompt.isOptimistic ? (
+                      <span className="ml-2 text-xs uppercase text-muted-foreground">(saving…)</span>
+                    ) : null}
+                  </h3>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-2 py-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => handlePromptDeleteClick(prompt)}
+                  aria-label={`Delete prompt ${prompt.title}`}
+                  disabled={prompt.isOptimistic || deletePromptMutation.isPending}
+                >
+                  Delete
+                </Button>
               </div>
+              <p className="text-sm text-muted-foreground">{prompt.body}</p>
               {prompt.tags.length ? (
                 <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
                   {prompt.tags.map((tag) => (
@@ -346,10 +466,14 @@ export const PromptsPage = () => {
 
   const handleResetData = () => {
     queryClient.setQueryData<PromptListItem[]>(promptsKey, []);
+    setLastEvaluation(null);
+    setUpgradeOpen(false);
   };
 
   const handleRestoreSeed = () => {
     setSimulateError(false);
+    setLastEvaluation(null);
+    setUpgradeOpen(false);
     queryClient.invalidateQueries({ queryKey: promptsKey });
   };
 
@@ -380,11 +504,16 @@ export const PromptsPage = () => {
       return 'Plan limit missing';
     }
 
-    const limitValue = planLimitRecord.value_int ?? 'Unlimited';
     const workspaceLabel = workspaceName ?? 'workspace';
+    const limitValue = planLimitRecord.value_int;
 
-    return `Plan limit for ${workspaceLabel}: ${limitValue} prompts`;
+    if (limitValue === null) {
+      return `Current usage in ${workspaceLabel}: ${currentUsage} prompts (unlimited plan)`;
+    }
+
+    return `Current usage in ${workspaceLabel}: ${currentUsage} of ${limitValue} prompts`;
   }, [
+    currentUsage,
     isPlanLimitLoading,
     planLookupError,
     planLimitError,
@@ -620,7 +749,46 @@ export const PromptsPage = () => {
         ))}
       </div>
 
-      <UpgradeDialog open={upgradeOpen} onOpenChange={handleUpgradeDialogChange} evaluation={lastEvaluation} />
+      <Dialog open={!!promptPendingDeletion} onOpenChange={handleDeleteDialogOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete prompt</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete “{promptPendingDeletion?.title}”? This will remove the
+              prompt from the current workspace.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Deletion updates the prompt record with a soft delete timestamp. You can restore it later
+            by clearing the <code>deleted_at</code> field in Supabase.
+          </p>
+          {deletePromptMutation.isError ? (
+            <p className="text-sm text-destructive">
+              {deletePromptMutation.error?.message ?? 'Failed to delete the prompt. Please try again.'}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => handleDeleteDialogOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={deletePromptMutation.isPending}
+            >
+              {deletePromptMutation.isPending ? 'Deleting…' : 'Delete prompt'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <UpgradeDialog
+        open={upgradeOpen}
+        onOpenChange={handleUpgradeDialogChange}
+        evaluation={lastEvaluation}
+        onResetEvaluation={() => setLastEvaluation(null)}
+      />
     </section>
   );
 };
