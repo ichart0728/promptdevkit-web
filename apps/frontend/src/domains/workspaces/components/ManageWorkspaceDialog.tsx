@@ -42,6 +42,7 @@ export const ManageWorkspaceDialog = ({ trigger }: ManageWorkspaceDialogProps) =
 
   const [open, setOpen] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState<ManageWorkspaceAction | null>(null);
+  const previousWorkspaceIdRef = React.useRef<string | null>(null);
 
   const form = useForm<ManageWorkspaceFormValues>({
     defaultValues: DEFAULT_FORM_VALUES,
@@ -67,22 +68,36 @@ export const ManageWorkspaceDialog = ({ trigger }: ManageWorkspaceDialogProps) =
   );
 
   React.useEffect(() => {
-    if (!open) {
-      resetForm(activeWorkspace?.name ?? '');
+    const nextWorkspaceId = activeWorkspace?.id ?? null;
+    const previousWorkspaceId = previousWorkspaceIdRef.current;
+
+    if (previousWorkspaceId === nextWorkspaceId) {
+      return;
     }
-  }, [activeWorkspace, open, resetForm]);
+
+    previousWorkspaceIdRef.current = nextWorkspaceId;
+
+    setPendingAction(null);
+
+    if (!activeWorkspace) {
+      resetForm('');
+      return;
+    }
+
+    resetForm(activeWorkspace.name);
+  }, [activeWorkspace, resetForm, setPendingAction]);
 
   const handleOpenChange = React.useCallback(
     (nextOpen: boolean) => {
       setOpen(nextOpen);
 
-      if (nextOpen) {
-        resetForm(activeWorkspace?.name ?? '');
-      } else {
+      resetForm(activeWorkspace?.name ?? '');
+
+      if (!nextOpen) {
         setPendingAction(null);
       }
     },
-    [activeWorkspace, resetForm],
+    [activeWorkspace, resetForm, setPendingAction],
   );
 
   const invalidateWorkspaceQueries = React.useCallback(async () => {
