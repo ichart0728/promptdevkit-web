@@ -15,7 +15,10 @@ vi.mock('@/domains/teams/api/teams', () => ({
     queryKey: ['teams', userId ?? 'anonymous'] as const,
     queryFn: () => fetchTeamsMock(),
   }),
+  teamsQueryKey: (userId: string | null) => ['teams', userId ?? 'anonymous'] as const,
   fetchTeams: () => fetchTeamsMock(),
+  updateTeamMemberRole: vi.fn(),
+  removeTeamMember: vi.fn(),
 }));
 
 vi.mock('@/domains/workspaces/api/workspaces', () => ({
