@@ -206,12 +206,11 @@ describe('deleteComment', () => {
     supabaseFromMock.mockReset();
   });
 
-  it('deletes the specified comment scoping filters by prompt, thread, and user', async () => {
+  it('deletes the specified comment scoping filters by thread and user', async () => {
     const singleMock = vi.fn().mockResolvedValue({ data: { id: 'comment-3' }, error: null });
     const selectMock = vi.fn().mockReturnValue({ single: singleMock });
     const eqUserMock = vi.fn().mockReturnValue({ select: selectMock });
-    const eqPromptMock = vi.fn().mockReturnValue({ eq: eqUserMock });
-    const eqThreadMock = vi.fn().mockReturnValue({ eq: eqPromptMock });
+    const eqThreadMock = vi.fn().mockReturnValue({ eq: eqUserMock });
     const eqIdMock = vi.fn().mockReturnValue({ eq: eqThreadMock });
     const deleteMock = vi.fn().mockReturnValue({ eq: eqIdMock });
 
@@ -229,7 +228,6 @@ describe('deleteComment', () => {
     expect(deleteMock).toHaveBeenCalled();
     expect(eqIdMock).toHaveBeenCalledWith('id', 'comment-3');
     expect(eqThreadMock).toHaveBeenCalledWith('thread_id', 'thread-1');
-    expect(eqPromptMock).toHaveBeenCalledWith('comment_threads.prompt_id', 'prompt-1');
     expect(eqUserMock).toHaveBeenCalledWith('created_by', 'user-1');
     expect(selectMock).toHaveBeenCalledWith('id');
     expect(singleMock).toHaveBeenCalled();
