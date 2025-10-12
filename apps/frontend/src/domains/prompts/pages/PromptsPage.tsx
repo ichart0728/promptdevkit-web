@@ -25,6 +25,7 @@ import {
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useActiveWorkspace } from '@/domains/workspaces/hooks/useActiveWorkspace';
 import { createPrompt, deletePrompt, fetchPrompts, promptsQueryKey, type Prompt } from '../api/prompts';
+import { PromptEditorDialog } from '../components/PromptEditorDialog';
 import {
   fetchPlanLimits,
   fetchUserPlanId,
@@ -48,18 +49,75 @@ const promptSchema = z.object({
 
 export type PromptFormValues = z.infer<typeof promptSchema>;
 
-type PromptListItem = Prompt & { isOptimistic?: boolean };
+type PromptListItemData = Prompt & { isOptimistic?: boolean };
 
 type OptimisticContext = {
-  previousPrompts: PromptListItem[];
+  previousPrompts: PromptListItemData[];
   optimisticId: string;
   queryKey: ReturnType<typeof promptsQueryKey>;
 };
 
 type DeleteOptimisticContext = {
-  previousPrompts: PromptListItem[];
+  previousPrompts: PromptListItemData[];
   queryKey: ReturnType<typeof promptsQueryKey>;
 };
+
+type PromptListItemRowProps = {
+  prompt: PromptListItemData;
+  onEdit: (prompt: PromptListItemData) => void;
+  onDelete: (prompt: PromptListItemData) => void;
+  disableDelete: boolean;
+};
+
+const PromptListItemRow = ({ prompt, onEdit, onDelete, disableDelete }: PromptListItemRowProps) => (
+  <li key={prompt.id}>
+    <div className="space-y-3 rounded-lg border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold">{prompt.title}</h3>
+            {prompt.isOptimistic ? (
+              <span className="text-xs uppercase text-muted-foreground">(saving…)</span>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onEdit(prompt)}
+            disabled={prompt.isOptimistic}
+            aria-label={`Edit prompt ${prompt.title}`}
+          >
+            Edit
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => onDelete(prompt)}
+            disabled={prompt.isOptimistic || disableDelete}
+            aria-label={`Delete prompt ${prompt.title}`}
+          >
+            Delete
+          </Button>
+        </div>
+      </div>
+      <p className="text-sm text-muted-foreground">{prompt.body}</p>
+      {prompt.note ? <p className="text-xs italic text-muted-foreground">Note: {prompt.note}</p> : null}
+      {prompt.tags.length ? (
+        <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
+          {prompt.tags.map((tag) => (
+            <span key={tag} className="rounded bg-muted px-2 py-0.5">
+              #{tag}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  </li>
+);
 
 const formatTags = (raw: string | undefined) =>
   raw?.split(',')
@@ -106,7 +164,9 @@ export const PromptsPage = () => {
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
   const [createPromptError, setCreatePromptError] = React.useState<string | null>(null);
-  const [promptPendingDeletion, setPromptPendingDeletion] = React.useState<PromptListItem | null>(null);
+  const [promptPendingDeletion, setPromptPendingDeletion] = React.useState<PromptListItemData | null>(null);
+  const [promptBeingEdited, setPromptBeingEdited] = React.useState<PromptListItemData | null>(null);
+  const [editorOpen, setEditorOpen] = React.useState(false);
 
   const workspaceId = activeWorkspace?.id ?? null;
   const workspaceType = activeWorkspace?.type ?? null;
@@ -217,17 +277,18 @@ export const PromptsPage = () => {
       setCreatePromptError(null);
 
       await queryClient.cancelQueries({ queryKey: mutationQueryKey });
-      const previousPrompts = queryClient.getQueryData<PromptListItem[]>(mutationQueryKey) ?? [];
+      const previousPrompts = queryClient.getQueryData<PromptListItemData[]>(mutationQueryKey) ?? [];
       const optimisticId = `optimistic-${Date.now()}`;
-      const optimisticPrompt: PromptListItem = {
+      const optimisticPrompt: PromptListItemData = {
         id: optimisticId,
         title: values.title,
         body: values.body,
         tags: formatTags(values.tags),
+        note: null,
         isOptimistic: true,
       };
 
-      queryClient.setQueryData<PromptListItem[]>(mutationQueryKey, [...previousPrompts, optimisticPrompt]);
+      queryClient.setQueryData<PromptListItemData[]>(mutationQueryKey, [...previousPrompts, optimisticPrompt]);
 
       return { previousPrompts, optimisticId, queryKey: mutationQueryKey } satisfies OptimisticContext;
     },
@@ -271,7 +332,7 @@ export const PromptsPage = () => {
         return;
       }
 
-      queryClient.setQueryData<PromptListItem[]>(context.queryKey, (current) => {
+      queryClient.setQueryData<PromptListItemData[]>(context.queryKey, (current) => {
         if (!current) {
           return [newPrompt];
         }
@@ -291,7 +352,7 @@ export const PromptsPage = () => {
     },
   });
 
-  const deletePromptMutation = useMutation<string, Error, PromptListItem, DeleteOptimisticContext>({
+  const deletePromptMutation = useMutation<string, Error, PromptListItemData, DeleteOptimisticContext>({
     mutationFn: async (prompt) => {
       if (prompt.isOptimistic) {
         throw new Error('Cannot delete a prompt while it is still saving.');
@@ -319,9 +380,9 @@ export const PromptsPage = () => {
       const mutationQueryKey = promptsQueryKey(workspaceId);
 
       await queryClient.cancelQueries({ queryKey: mutationQueryKey });
-      const previousPrompts = queryClient.getQueryData<PromptListItem[]>(mutationQueryKey) ?? [];
+      const previousPrompts = queryClient.getQueryData<PromptListItemData[]>(mutationQueryKey) ?? [];
 
-      queryClient.setQueryData<PromptListItem[]>(
+      queryClient.setQueryData<PromptListItemData[]>(
         mutationQueryKey,
         previousPrompts.filter((item) => item.id !== prompt.id),
       );
@@ -348,7 +409,30 @@ export const PromptsPage = () => {
     },
   });
 
-  const handlePromptDeleteClick = (prompt: PromptListItem) => {
+  const handlePromptEditClick = (prompt: PromptListItemData) => {
+    if (prompt.isOptimistic) {
+      return;
+    }
+
+    if (!activeWorkspace || !workspaceId || !userId) {
+      return;
+    }
+
+    setUpgradeOpen(false);
+    setLastEvaluation(null);
+    setPromptBeingEdited(prompt);
+    setEditorOpen(true);
+  };
+
+  const handleEditorOpenChange = (open: boolean) => {
+    if (!open) {
+      setPromptBeingEdited(null);
+    }
+
+    setEditorOpen(open);
+  };
+
+  const handlePromptDeleteClick = (prompt: PromptListItemData) => {
     if (prompt.isOptimistic) {
       return;
     }
@@ -392,8 +476,8 @@ export const PromptsPage = () => {
     },
   });
 
-  const cachedPrompts = queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? [];
-  const serverPrompts = (promptsQuery.data ?? []) as PromptListItem[];
+  const cachedPrompts = queryClient.getQueryData<PromptListItemData[]>(promptsKey) ?? [];
+  const serverPrompts = (promptsQuery.data ?? []) as PromptListItemData[];
   const prompts = cachedPrompts.length ? cachedPrompts : serverPrompts;
   const currentUsage = prompts.length;
 
@@ -406,7 +490,7 @@ export const PromptsPage = () => {
 
   const handleSubmit = form.handleSubmit(async (values) => {
     setCreatePromptError(null);
-    const currentUsage = (queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? prompts).length;
+    const currentUsage = (queryClient.getQueryData<PromptListItemData[]>(promptsKey) ?? prompts).length;
     const planLimits = planLimitsQuery.data as PlanLimitMap | undefined;
 
     if (!planLimits) {
@@ -495,48 +579,20 @@ export const PromptsPage = () => {
     return (
       <ul className="space-y-3">
         {prompts.map((prompt) => (
-          <li key={prompt.id} className="rounded-md border bg-card p-4">
-            <div className="flex flex-col gap-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <h3 className="text-base font-semibold text-foreground">
-                    {prompt.title}
-                    {prompt.isOptimistic ? (
-                      <span className="ml-2 text-xs uppercase text-muted-foreground">(saving…)</span>
-                    ) : null}
-                  </h3>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto px-2 py-1 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => handlePromptDeleteClick(prompt)}
-                  aria-label={`Delete prompt ${prompt.title}`}
-                  disabled={prompt.isOptimistic || deletePromptMutation.isPending}
-                >
-                  Delete
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground">{prompt.body}</p>
-              {prompt.tags.length ? (
-                <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                  {prompt.tags.map((tag) => (
-                    <span key={tag} className="rounded bg-muted px-2 py-0.5">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </li>
+          <PromptListItemRow
+            key={prompt.id}
+            prompt={prompt}
+            onEdit={handlePromptEditClick}
+            onDelete={handlePromptDeleteClick}
+            disableDelete={deletePromptMutation.isPending}
+          />
         ))}
       </ul>
     );
   };
 
   const handleResetData = () => {
-    queryClient.setQueryData<PromptListItem[]>(promptsKey, []);
+    queryClient.setQueryData<PromptListItemData[]>(promptsKey, []);
     setLastEvaluation(null);
     setUpgradeOpen(false);
     setCreatePromptError(null);
@@ -611,6 +667,8 @@ export const PromptsPage = () => {
     if (previousWorkspaceId !== workspaceId) {
       setLastEvaluation(null);
       setUpgradeOpen(false);
+      setPromptBeingEdited(null);
+      setEditorOpen(false);
     }
 
     lastWorkspaceIdRef.current = workspaceId;
@@ -825,6 +883,14 @@ export const PromptsPage = () => {
           </div>
         ))}
       </div>
+
+      <PromptEditorDialog
+        open={editorOpen && !!promptBeingEdited}
+        onOpenChange={handleEditorOpenChange}
+        prompt={promptBeingEdited}
+        workspace={activeWorkspace ?? null}
+        userId={userId}
+      />
 
       <Dialog open={!!promptPendingDeletion} onOpenChange={handleDeleteDialogOpenChange}>
         <DialogContent>
