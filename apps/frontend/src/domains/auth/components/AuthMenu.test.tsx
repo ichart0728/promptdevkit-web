@@ -8,6 +8,10 @@ import { AuthMenu } from './AuthMenu';
 import { useSessionQuery } from '../hooks/useSessionQuery';
 import { useSignOutMutation } from '../hooks/useSignOutMutation';
 
+vi.mock('@/components/common/NotificationsMenu', () => ({
+  NotificationsMenu: () => <div data-testid="notifications-menu" />,
+}));
+
 vi.mock('../hooks/useSessionQuery', () => ({
   useSessionQuery: vi.fn(),
 }));
@@ -66,6 +70,7 @@ describe('AuthMenu', () => {
 
     render(<AuthMenu />);
 
+    expect(screen.getByTestId('notifications-menu')).toBeInTheDocument();
     expect(screen.getByText('team@example.com')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
