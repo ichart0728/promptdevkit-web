@@ -56,16 +56,19 @@ const mapCommentRow = (row: CommentRow, expectedPromptId?: string): Comment => (
   updatedAt: row.updated_at,
 });
 
+export const promptCommentsQueryKey = (promptId: string | null) =>
+  ['prompt-comments', promptId] as const;
+
 export const commentThreadsQueryKey = (
   promptId: string | null,
   pagination: { offset: number; limit: number },
-) => ['comment-threads', promptId, pagination] as const;
+) => [...promptCommentsQueryKey(promptId), 'threads', pagination] as const;
 
 export const commentThreadCommentsQueryKey = (
   promptId: string | null,
   threadId: string | null,
   pagination: { offset: number; limit: number },
-) => ['comment-thread-comments', promptId, threadId, pagination] as const;
+) => [...promptCommentsQueryKey(promptId), 'threads', threadId, 'comments', pagination] as const;
 
 export type FetchPromptCommentThreadsParams = {
   promptId: string;

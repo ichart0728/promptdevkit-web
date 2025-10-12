@@ -21,8 +21,9 @@ const supabaseFromMock = supabase.from as unknown as Mock;
 describe('commentThreadsQueryKey', () => {
   it('returns a stable tuple including pagination params', () => {
     expect(commentThreadsQueryKey('prompt-1', { offset: 0, limit: 20 })).toEqual([
-      'comment-threads',
+      'prompt-comments',
       'prompt-1',
+      'threads',
       { offset: 0, limit: 20 },
     ]);
   });
@@ -31,9 +32,11 @@ describe('commentThreadsQueryKey', () => {
 describe('commentThreadCommentsQueryKey', () => {
   it('returns a stable tuple scoped by prompt and thread', () => {
     expect(commentThreadCommentsQueryKey('prompt-1', 'thread-1', { offset: 40, limit: 10 })).toEqual([
-      'comment-thread-comments',
+      'prompt-comments',
       'prompt-1',
+      'threads',
       'thread-1',
+      'comments',
       { offset: 40, limit: 10 },
     ]);
   });
