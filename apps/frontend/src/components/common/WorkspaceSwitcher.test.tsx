@@ -81,4 +81,28 @@ describe('WorkspaceSwitcher', () => {
     expect(setActiveWorkspaceId).toHaveBeenCalledWith('workspace-2');
     expect(manageDialogMock).toHaveBeenCalled();
   });
+
+  it('shows the active archived workspace so it can be restored', () => {
+    const value: ContextValue = {
+      ...baseContext,
+      workspaces: [],
+      activeWorkspace: {
+        id: 'workspace-1',
+        name: 'Personal Space',
+        type: 'personal',
+        teamId: null,
+        archivedAt: '2024-01-01T00:00:00Z',
+      },
+    };
+
+    renderSwitcher(value);
+
+    expect(screen.getByRole('combobox')).toHaveValue('workspace-1');
+    expect(
+      screen.getByRole('option', {
+        name: 'Personal Space (Personal) (Archived)',
+      }),
+    ).toBeInTheDocument();
+    expect(manageDialogMock).toHaveBeenCalled();
+  });
 });

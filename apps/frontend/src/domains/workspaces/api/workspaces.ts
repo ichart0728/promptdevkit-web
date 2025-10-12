@@ -32,7 +32,6 @@ export const fetchWorkspaces = async (): Promise<Workspace[]> => {
   const { data, error } = await supabase
     .from('workspaces')
     .select('id,name,type,team_id,archived_at')
-    .is('archived_at', null)
     .order('created_at', { ascending: true });
 
   if (error) {

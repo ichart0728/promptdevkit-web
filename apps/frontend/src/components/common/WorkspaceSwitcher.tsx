@@ -1,4 +1,4 @@
-import type { ChangeEvent } from 'react';
+import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ManageWorkspaceDialog } from '@/domains/workspaces/components/ManageWorkspaceDialog';
@@ -10,6 +10,20 @@ const formatWorkspaceLabel = (name: string, type: 'personal' | 'team') =>
 export const WorkspaceSwitcher = () => {
   const { workspaces, activeWorkspace, setActiveWorkspaceId, isLoading, isError, error, refetch, hasSession } =
     useWorkspaceContext();
+
+  const selectableWorkspaces = React.useMemo(() => {
+    if (activeWorkspace && activeWorkspace.archivedAt) {
+      const activeWorkspaceInList = workspaces.some((workspace) => workspace.id === activeWorkspace.id);
+
+      if (!activeWorkspaceInList) {
+        return [activeWorkspace, ...workspaces];
+      }
+    }
+
+    return workspaces;
+  }, [activeWorkspace, workspaces]);
+
+  const hasSelectableWorkspaces = selectableWorkspaces.length > 0;
 
   if (!hasSession) {
     return null;
@@ -37,11 +51,11 @@ export const WorkspaceSwitcher = () => {
     );
   }
 
-  if (workspaces.length === 0) {
+  if (!hasSelectableWorkspaces) {
     return <div className="text-sm text-muted-foreground">No workspaces available</div>;
   }
 
-  const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
+  const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setActiveWorkspaceId(event.target.value);
   };
 
@@ -55,11 +69,16 @@ export const WorkspaceSwitcher = () => {
           value={activeWorkspace?.id ?? ''}
           onChange={handleChange}
         >
-          {workspaces.map((workspace) => (
-            <option key={workspace.id} value={workspace.id} className="text-foreground">
-              {formatWorkspaceLabel(workspace.name, workspace.type)}
-            </option>
-          ))}
+          {selectableWorkspaces.map((workspace) => {
+            const label = formatWorkspaceLabel(workspace.name, workspace.type);
+            const isArchived = Boolean(workspace.archivedAt);
+
+            return (
+              <option key={workspace.id} value={workspace.id} className="text-foreground">
+                {isArchived ? `${label} (Archived)` : label}
+              </option>
+            );
+          })}
         </select>
       </label>
       <ManageWorkspaceDialog />

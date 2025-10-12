@@ -177,4 +177,54 @@ describe('WorkspaceProvider', () => {
       expect(screen.getByTestId('active-workspace')).toHaveTextContent('none');
     });
   });
+
+  it('keeps an archived workspace active when it is the only workspace', async () => {
+    fetchWorkspacesMock.mockResolvedValue([buildWorkspace('workspace-1')]);
+
+    const { queryClient } = renderWithProvider();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+    });
+
+    act(() => {
+      queryClient.setQueryData(
+        ['workspaces', 'user-1'],
+        [buildWorkspace('workspace-1', { archivedAt: '2024-01-01T00:00:00Z' })],
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+      expect(screen.getByTestId('workspace-count')).toHaveTextContent('0');
+    });
+  });
+
+  it('switches to another active workspace when the current one becomes archived', async () => {
+    fetchWorkspacesMock.mockResolvedValue([
+      buildWorkspace('workspace-1'),
+      buildWorkspace('workspace-2'),
+    ]);
+
+    const { queryClient } = renderWithProvider();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+    });
+
+    act(() => {
+      queryClient.setQueryData(
+        ['workspaces', 'user-1'],
+        [
+          buildWorkspace('workspace-1', { archivedAt: '2024-01-01T00:00:00Z' }),
+          buildWorkspace('workspace-2'),
+        ],
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-2');
+      expect(screen.getByTestId('workspace-count')).toHaveTextContent('1');
+    });
+  });
 });

@@ -172,4 +172,39 @@ describe('ManageWorkspaceDialog', () => {
       });
     });
   });
+
+  it('restores an archived workspace and shows a confirmation toast', async () => {
+    const refetchMock = vi.fn().mockResolvedValue([]);
+    manageWorkspaceMock.mockResolvedValue(buildWorkspace({ archivedAt: null }));
+
+    renderDialog({
+      activeWorkspace: buildWorkspace({ archivedAt: '2024-01-01T00:00:00Z' }),
+      workspaces: [],
+      refetch: refetchMock,
+    });
+
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: 'Manage' }));
+    await user.click(screen.getByRole('button', { name: 'Restore workspace' }));
+
+    await waitFor(() => {
+      expect(manageWorkspaceMock).toHaveBeenCalled();
+    });
+
+    const restoreCall = manageWorkspaceMock.mock.calls.at(-1)?.[0];
+
+    expect(restoreCall).toEqual({
+      workspaceId: 'workspace-1',
+      action: 'restore',
+    });
+
+    await waitFor(() => {
+      expect(refetchMock).toHaveBeenCalled();
+      expect(toastMock).toHaveBeenCalledWith({
+        title: 'Workspace restored',
+        description: 'The workspace is active again.',
+      });
+    });
+  });
 });
