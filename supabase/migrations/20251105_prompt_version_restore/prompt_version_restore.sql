@@ -72,26 +72,14 @@ BEGIN
   WHERE id = prompt_id
   RETURNING * INTO v_prompt;
 
-  INSERT INTO public.prompt_versions (
-    prompt_id,
-    version,
-    title,
-    body,
-    note,
-    tags,
-    updated_by,
-    restored_from_version
-  )
-  VALUES (
-    v_prompt.id,
-    v_next_version,
-    v_version.title,
-    v_version.body,
-    v_version.note,
-    COALESCE(v_version.tags, ARRAY[]::text[]),
-    v_user_id,
-    v_version.version
-  );
+  UPDATE public.prompt_versions
+  SET restored_from_version = v_version.version
+  WHERE prompt_id = v_prompt.id
+    AND version = v_next_version;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Restored version % for prompt % not found after update.', v_next_version, v_prompt.id USING ERRCODE = 'P0002';
+  END IF;
 
   RETURN v_prompt;
 END;
