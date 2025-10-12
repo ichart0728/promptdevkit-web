@@ -13,6 +13,7 @@ import {
   createComment,
   createCommentThread,
   deleteComment,
+  updateComment,
   fetchPromptCommentThreads,
   fetchThreadComments,
   promptCommentsQueryKey,
@@ -122,6 +123,11 @@ type DeleteOptimisticContext = {
   queryKey: ReturnType<typeof commentThreadCommentsQueryKey>;
 };
 
+type UpdateOptimisticContext = {
+  previousComments: Comment[];
+  queryKey: ReturnType<typeof commentThreadCommentsQueryKey>;
+};
+
 export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelProps) => {
   const queryClient = useQueryClient();
   const [activeThreadId, setActiveThreadId] = React.useState<string | null>(null);
@@ -130,6 +136,9 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
   const [threadFormError, setThreadFormError] = React.useState<string | null>(null);
   const [threadEvaluation, setThreadEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
   const [isUpgradeDialogOpen, setIsUpgradeDialogOpen] = React.useState(false);
+  const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = React.useState('');
+  const [editingError, setEditingError] = React.useState<string | null>(null);
 
   const commentForm = useForm<CommentFormValues>({
     resolver: zodResolver(commentFormSchema),
@@ -150,6 +159,9 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
     setIsUpgradeDialogOpen(false);
     commentForm.reset({ body: '' });
     threadForm.reset({ body: '' });
+    setEditingCommentId(null);
+    setEditingDraft('');
+    setEditingError(null);
   }, [promptId, commentForm, threadForm]);
 
   const userPlanQuery = useQuery({
@@ -373,6 +385,88 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
     },
   });
 
+  const updateCommentMutation = useMutation<
+    Comment,
+    Error,
+    { commentId: string; body: string },
+    UpdateOptimisticContext
+  >({
+    mutationFn: async ({ commentId, body }) => {
+      if (!promptId) {
+        throw new Error('No prompt selected.');
+      }
+
+      if (!activeThreadId) {
+        throw new Error('No active comment thread.');
+      }
+
+      if (!userId) {
+        throw new Error('You must be signed in to edit comments.');
+      }
+
+      return updateComment({
+        promptId,
+        threadId: activeThreadId,
+        commentId,
+        userId,
+        body,
+      });
+    },
+    onMutate: async ({ commentId, body }) => {
+      if (!promptId || !activeThreadId) {
+        throw new Error('Prompt and thread must be available for optimistic updates.');
+      }
+
+      const queryKey = commentThreadCommentsQueryKey(promptId, activeThreadId, COMMENTS_PAGINATION);
+
+      setEditingError(null);
+
+      await queryClient.cancelQueries({ queryKey });
+
+      const previousComments = (queryClient.getQueryData<Comment[]>(queryKey) ?? []).map((comment) => ({
+        ...comment,
+      }));
+
+      const updatedAt = new Date().toISOString();
+
+      queryClient.setQueryData<Comment[]>(queryKey, (current = []) =>
+        current.map((comment) =>
+          comment.id === commentId
+            ? { ...comment, body, updatedAt }
+            : comment,
+        ),
+      );
+
+      return { previousComments, queryKey } satisfies UpdateOptimisticContext;
+    },
+    onError: (error, _variables, context) => {
+      if (context) {
+        queryClient.setQueryData<Comment[]>(context.queryKey, context.previousComments);
+      }
+
+      const message =
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : 'Failed to update comment. Please try again.';
+
+      setEditingError(message);
+      toast({ title: 'Failed to update comment', description: message });
+    },
+    onSuccess: (updatedComment, variables, context) => {
+      if (!context) {
+        return;
+      }
+
+      queryClient.setQueryData<Comment[]>(context.queryKey, (current = []) =>
+        current.map((comment) => (comment.id === variables.commentId ? updatedComment : comment)),
+      );
+
+      setEditingCommentId(null);
+      setEditingDraft('');
+      setEditingError(null);
+    },
+  });
+
   const createThreadMutation = useMutation<CommentThread, Error, { body: string }>({
     mutationFn: async ({ body }) => {
       if (!promptId) {
@@ -508,7 +602,39 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
 
   const handleDeleteComment = async (commentId: string) => {
     try {
+      if (editingCommentId === commentId) {
+        setEditingCommentId(null);
+        setEditingDraft('');
+        setEditingError(null);
+      }
       await deleteCommentMutation.mutateAsync({ commentId });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleStartEditing = (comment: Comment) => {
+    setEditingCommentId(comment.id);
+    setEditingDraft(comment.body);
+    setEditingError(null);
+  };
+
+  const handleCancelEditing = () => {
+    setEditingCommentId(null);
+    setEditingDraft('');
+    setEditingError(null);
+  };
+
+  const handleUpdateComment = async (commentId: string) => {
+    const trimmedBody = editingDraft.trim();
+
+    if (!trimmedBody) {
+      setEditingError('Comment cannot be empty.');
+      return;
+    }
+
+    try {
+      await updateCommentMutation.mutateAsync({ commentId, body: trimmedBody });
     } catch (error) {
       console.error(error);
     }
@@ -628,6 +754,10 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
           const isDeleting =
             deleteCommentMutation.isPending && deleteCommentMutation.variables?.commentId === comment.id;
           const canDelete = userId && comment.createdBy === userId;
+          const canEdit = userId && comment.createdBy === userId;
+          const isEditing = editingCommentId === comment.id;
+          const isUpdating =
+            updateCommentMutation.isPending && updateCommentMutation.variables?.commentId === comment.id;
 
           return (
             <li key={comment.id} className="rounded-md border p-3 text-sm">
@@ -635,18 +765,63 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
                 <span className="font-medium">{comment.createdBy}</span>
                 <span className="text-xs text-muted-foreground">{formatTimestamp(comment.createdAt)}</span>
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm">{comment.body}</p>
-              {canDelete ? (
-                <div className="mt-3 flex justify-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDeleteComment(comment.id)}
-                    disabled={isDeleting}
-                  >
-                    {isDeleting ? 'Deleting…' : 'Delete'}
-                  </Button>
+              {isEditing ? (
+                <div className="mt-2 space-y-2">
+                  <textarea
+                    id={`prompt-comment-edit-${comment.id}`}
+                    className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={editingDraft}
+                    onChange={(event) => setEditingDraft(event.target.value)}
+                    aria-invalid={Boolean(editingError)}
+                  />
+                  {editingError ? <p className="text-xs text-destructive">{editingError}</p> : null}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCancelEditing}
+                      disabled={isUpdating}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleUpdateComment(comment.id)}
+                      disabled={isUpdating}
+                    >
+                      {isUpdating ? 'Saving…' : 'Save'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 whitespace-pre-wrap text-sm">{comment.body}</p>
+              )}
+              {!isEditing && (canEdit || canDelete) ? (
+                <div className="mt-3 flex justify-end gap-2">
+                  {canEdit ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleStartEditing(comment)}
+                      disabled={isDeleting}
+                    >
+                      Edit
+                    </Button>
+                  ) : null}
+                  {canDelete ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDeleteComment(comment.id)}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? 'Deleting…' : 'Delete'}
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </li>
