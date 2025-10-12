@@ -8,6 +8,7 @@ import {
   createComment,
   createCommentThread,
   deleteComment,
+  updateComment,
   fetchPromptCommentThreads,
   fetchThreadComments,
   SupabasePlanLimitError,
@@ -23,6 +24,7 @@ vi.mock('../../api/promptComments', () => ({
   createComment: vi.fn(),
   createCommentThread: vi.fn(),
   deleteComment: vi.fn(),
+  updateComment: vi.fn(),
   promptCommentsQueryKey: (promptId: string | null) => ['prompt-comments', promptId] as const,
   commentThreadsQueryKey: (
     promptId: string | null,
@@ -70,6 +72,7 @@ const fetchThreadCommentsMock = vi.mocked(fetchThreadComments);
 const createCommentMock = vi.mocked(createComment);
 const createCommentThreadMock = vi.mocked(createCommentThread);
 const deleteCommentMock = vi.mocked(deleteComment);
+const updateCommentMock = vi.mocked(updateComment);
 const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
 const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
 
@@ -92,6 +95,17 @@ const defaultThread: CommentThread = {
   promptId: 'prompt-1',
   createdBy: 'user-1',
   createdAt: '2024-05-01T00:00:00.000Z',
+};
+
+const defaultComment: Comment = {
+  id: 'comment-1',
+  promptId: 'prompt-1',
+  threadId: 'thread-1',
+  body: 'Initial comment body',
+  mentions: [],
+  createdBy: 'user-1',
+  createdAt: '2024-05-01T00:00:00.000Z',
+  updatedAt: '2024-05-01T00:00:00.000Z',
 };
 
 const renderPanel = ({ promptId = 'prompt-1', userId = 'user-1' }: RenderPanelOptions = {}) => {
@@ -124,6 +138,7 @@ describe('PromptCommentsPanel - thread creation', () => {
     });
     createCommentMock.mockResolvedValue({} as Comment);
     deleteCommentMock.mockResolvedValue('comment-1');
+    updateCommentMock.mockResolvedValue(defaultComment);
   });
 
   afterEach(() => {
@@ -251,6 +266,137 @@ describe('PromptCommentsPanel - thread creation', () => {
 
     expect(await screen.findByText('Thread description cannot be empty.')).toBeInTheDocument();
     expect(createCommentThreadMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('PromptCommentsPanel - comment editing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchPromptCommentThreadsMock.mockResolvedValue([defaultThread]);
+    fetchThreadCommentsMock.mockResolvedValue([defaultComment]);
+    fetchUserPlanIdMock.mockResolvedValue('plan-free');
+    fetchPlanLimitsMock.mockResolvedValue({
+      comment_threads_per_prompt: {
+        key: 'comment_threads_per_prompt',
+        value_int: 5,
+        value_str: null,
+        value_json: null,
+      },
+    });
+    updateCommentMock.mockResolvedValue({
+      ...defaultComment,
+      body: 'Updated comment body',
+      updatedAt: '2024-05-02T00:00:00.000Z',
+    });
+    deleteCommentMock.mockResolvedValue('comment-1');
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('allows the author to edit a comment and updates the cache on success', async () => {
+    const { user, queryClient } = renderPanel();
+
+    expect(await screen.findByText('Initial comment body')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const editTextarea = await screen.findByDisplayValue('Initial comment body');
+    await user.clear(editTextarea);
+    await user.type(editTextarea, 'Updated comment body   ');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateCommentMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        commentId: 'comment-1',
+        userId: 'user-1',
+        body: 'Updated comment body',
+      });
+    });
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<Comment[]>([
+        'prompt-comments',
+        'prompt-1',
+        'threads',
+        'thread-1',
+        'comments',
+        { offset: 0, limit: 50 },
+      ]);
+      expect(cached?.[0]?.body).toBe('Updated comment body');
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      const [firstComment] = screen.getAllByRole('listitem');
+      expect(firstComment).toHaveTextContent('Updated comment body');
+    });
+
+  });
+
+  it('shows an error and restores the comment when the update fails', async () => {
+    const error = new Error('You do not have permission to edit this comment.');
+    updateCommentMock.mockRejectedValueOnce(error);
+
+    const { user, queryClient } = renderPanel();
+
+    expect(await screen.findByText('Initial comment body')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const editTextarea = await screen.findByDisplayValue('Initial comment body');
+    await user.clear(editTextarea);
+    await user.type(editTextarea, 'Unauthorized edit');
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateCommentMock).toHaveBeenCalled();
+    });
+
+    expect(await screen.findByText('You do not have permission to edit this comment.')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Unauthorized edit')).toBeInTheDocument();
+    expect(toastMock).toHaveBeenCalledWith({
+      title: 'Failed to update comment',
+      description: 'You do not have permission to edit this comment.',
+    });
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<Comment[]>([
+        'prompt-comments',
+        'prompt-1',
+        'threads',
+        'thread-1',
+        'comments',
+        { offset: 0, limit: 50 },
+      ]);
+      expect(cached?.[0]?.body).toBe('Initial comment body');
+    });
+  });
+
+  it('cancels editing and restores the original comment text', async () => {
+    const { user } = renderPanel();
+
+    expect(await screen.findByText('Initial comment body')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+
+    const editTextarea = await screen.findByDisplayValue('Initial comment body');
+    await user.clear(editTextarea);
+    await user.type(editTextarea, 'Draft edit text');
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(screen.getByText('Initial comment body')).toBeInTheDocument();
+    expect(updateCommentMock).not.toHaveBeenCalled();
   });
 });
 
