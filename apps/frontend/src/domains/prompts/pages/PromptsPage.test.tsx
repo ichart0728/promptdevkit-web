@@ -30,6 +30,10 @@ vi.mock('@/domains/prompts/api/planLimits', () => ({
   fetchPlanLimits: vi.fn(),
 }));
 
+vi.mock('../components/PromptEditorDialog', () => ({
+  PromptEditorDialog: () => null,
+}));
+
 vi.mock('@/domains/auth/hooks/useSessionQuery', () => ({
   useSessionQuery: vi.fn(),
 }));
