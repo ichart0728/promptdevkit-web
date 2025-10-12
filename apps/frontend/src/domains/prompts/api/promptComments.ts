@@ -279,6 +279,50 @@ export const deleteComment = async ({
   return data?.id ?? commentId;
 };
 
+export type UpdateCommentParams = {
+  promptId: string;
+  threadId: string;
+  commentId: string;
+  userId: string;
+  body: string;
+};
+
+export const updateComment = async ({
+  promptId,
+  threadId,
+  commentId,
+  userId,
+  body,
+}: UpdateCommentParams): Promise<Comment> => {
+  const trimmedBody = body.trim();
+
+  if (!trimmedBody) {
+    throw new Error('Comment cannot be empty.');
+  }
+
+  const { data, error } = await supabase
+    .from('comments')
+    .update({ body: trimmedBody } as never)
+    .eq('id', commentId)
+    .eq('thread_id', threadId)
+    .eq('created_by', userId)
+    .select(
+      'id,thread_id,body,mentions,created_by,created_at,updated_at,comment_threads!inner(prompt_id)',
+    )
+    .eq('comment_threads.prompt_id', promptId)
+    .single<CommentRow>();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Failed to update comment.');
+  }
+
+  return mapCommentRow(data as CommentRow, promptId);
+};
+
 export type DeleteCommentThreadParams = {
   promptId: string;
   threadId: string;

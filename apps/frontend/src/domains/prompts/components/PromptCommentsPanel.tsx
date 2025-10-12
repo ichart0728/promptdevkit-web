@@ -11,6 +11,7 @@ import {
   commentThreadsQueryKey,
   createComment,
   deleteComment,
+  updateComment,
   fetchPromptCommentThreads,
   fetchThreadComments,
   promptCommentsQueryKey,
@@ -89,11 +90,20 @@ type DeleteOptimisticContext = {
   queryKey: ReturnType<typeof commentThreadCommentsQueryKey>;
 };
 
+type UpdateOptimisticContext = {
+  previousComments: Comment[];
+  queryKey: ReturnType<typeof commentThreadCommentsQueryKey>;
+  originalComment: Comment | null;
+};
+
 export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelProps) => {
   const queryClient = useQueryClient();
   const [activeThreadId, setActiveThreadId] = React.useState<string | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [commentsError, setCommentsError] = React.useState<string | null>(null);
+  const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
+  const [editingBody, setEditingBody] = React.useState('');
+  const [editError, setEditError] = React.useState<string | null>(null);
 
   const form = useForm<CommentFormValues>({
     resolver: zodResolver(commentFormSchema),
@@ -104,8 +114,17 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
     setActiveThreadId(null);
     setFormError(null);
     setCommentsError(null);
+    setEditingCommentId(null);
+    setEditingBody('');
+    setEditError(null);
     form.reset({ body: '' });
   }, [promptId, form]);
+
+  React.useEffect(() => {
+    setEditingCommentId(null);
+    setEditingBody('');
+    setEditError(null);
+  }, [activeThreadId]);
 
   const threadsQuery = useQuery({
     queryKey: commentThreadsQueryKey(promptId, THREADS_PAGINATION),
@@ -292,6 +311,100 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
     },
   });
 
+  const updateCommentMutation = useMutation<
+    Comment,
+    Error,
+    { commentId: string; body: string },
+    UpdateOptimisticContext
+  >({
+    mutationFn: async ({ commentId, body }) => {
+      if (!promptId) {
+        throw new Error('No prompt selected.');
+      }
+
+      if (!activeThreadId) {
+        throw new Error('No active comment thread.');
+      }
+
+      if (!userId) {
+        throw new Error('You must be signed in to edit comments.');
+      }
+
+      const trimmedBody = body.trim();
+
+      if (!trimmedBody) {
+        throw new Error('Comment cannot be empty.');
+      }
+
+      return updateComment({
+        promptId,
+        threadId: activeThreadId,
+        commentId,
+        userId,
+        body: trimmedBody,
+      });
+    },
+    onMutate: async ({ commentId, body }) => {
+      if (!promptId || !activeThreadId) {
+        throw new Error('Prompt and thread must be available for optimistic updates.');
+      }
+
+      const queryKey = commentThreadCommentsQueryKey(promptId, activeThreadId, COMMENTS_PAGINATION);
+
+      setEditError(null);
+
+      await queryClient.cancelQueries({ queryKey });
+
+      const previousComments = queryClient.getQueryData<Comment[]>(queryKey) ?? [];
+      const originalComment = previousComments.find((comment) => comment.id === commentId) ?? null;
+
+      if (!originalComment) {
+        return { previousComments, queryKey, originalComment } satisfies UpdateOptimisticContext;
+      }
+
+      const optimisticComment: Comment = {
+        ...originalComment,
+        body: body.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      queryClient.setQueryData<Comment[]>(queryKey, (current = []) =>
+        current.map((comment) => (comment.id === commentId ? optimisticComment : comment)),
+      );
+
+      return { previousComments, queryKey, originalComment } satisfies UpdateOptimisticContext;
+    },
+    onError: (error, _variables, context) => {
+      if (context) {
+        queryClient.setQueryData<Comment[]>(context.queryKey, context.previousComments);
+        if (context.originalComment) {
+          setEditingBody(context.originalComment.body);
+        }
+      }
+
+      const message =
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : 'Failed to update comment. Please try again.';
+
+      setEditError(message);
+      toast({ title: 'Comment update failed', description: message });
+    },
+    onSuccess: (updatedComment, _variables, context) => {
+      if (context) {
+        queryClient.setQueryData<Comment[]>(context.queryKey, (current = []) =>
+          current.map((comment) => (comment.id === updatedComment.id ? updatedComment : comment)),
+        );
+      }
+
+      setEditingCommentId(null);
+      setEditingBody('');
+      setEditError(null);
+
+      queryClient.invalidateQueries({ queryKey: promptCommentsQueryKey(promptId) });
+    },
+  });
+
   const handleSubmit = form.handleSubmit(async (values) => {
     try {
       await createCommentMutation.mutateAsync(values);
@@ -303,6 +416,44 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
   const handleDeleteComment = async (commentId: string) => {
     try {
       await deleteCommentMutation.mutateAsync({ commentId });
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleStartEditing = (comment: Comment) => {
+    setEditingCommentId(comment.id);
+    setEditingBody(comment.body);
+    setEditError(null);
+  };
+
+  const handleCancelEditing = () => {
+    setEditingCommentId(null);
+    setEditingBody('');
+    setEditError(null);
+  };
+
+  const handleSaveEditing = async (commentId: string) => {
+    const trimmedBody = editingBody.trim();
+
+    if (!trimmedBody) {
+      setEditError('Comment cannot be empty.');
+      return;
+    }
+
+    if (!commentsQuery.data) {
+      return;
+    }
+
+    const existingComment = commentsQuery.data.find((comment) => comment.id === commentId);
+
+    if (existingComment && existingComment.body.trim() === trimmedBody) {
+      handleCancelEditing();
+      return;
+    }
+
+    try {
+      await updateCommentMutation.mutateAsync({ commentId, body: trimmedBody });
     } catch (error) {
       console.error(error);
     }
@@ -401,7 +552,11 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
         {comments.map((comment) => {
           const isDeleting =
             deleteCommentMutation.isPending && deleteCommentMutation.variables?.commentId === comment.id;
+          const isUpdating =
+            updateCommentMutation.isPending && updateCommentMutation.variables?.commentId === comment.id;
           const canDelete = userId && comment.createdBy === userId;
+          const canEdit = canDelete;
+          const isEditing = editingCommentId === comment.id;
 
           return (
             <li key={comment.id} className="rounded-md border p-3 text-sm">
@@ -409,20 +564,70 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
                 <span className="font-medium">{comment.createdBy}</span>
                 <span className="text-xs text-muted-foreground">{formatTimestamp(comment.createdAt)}</span>
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm">{comment.body}</p>
-              {canDelete ? (
-                <div className="mt-3 flex justify-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDeleteComment(comment.id)}
-                    disabled={isDeleting}
-                  >
-                    {isDeleting ? 'Deleting…' : 'Delete'}
-                  </Button>
+              {isEditing ? (
+                <div className="mt-2 space-y-2">
+                  <textarea
+                    value={editingBody}
+                    onChange={(event) => {
+                      setEditingBody(event.target.value);
+                      if (editError) {
+                        setEditError(null);
+                      }
+                    }}
+                    className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  />
+                  {editError ? <p className="text-xs text-destructive">{editError}</p> : null}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleCancelEditing}
+                      disabled={isUpdating}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => handleSaveEditing(comment.id)}
+                      disabled={isUpdating}
+                    >
+                      {isUpdating ? 'Saving…' : 'Save'}
+                    </Button>
+                  </div>
                 </div>
-              ) : null}
+              ) : (
+                <>
+                  <p className="mt-2 whitespace-pre-wrap text-sm">{comment.body}</p>
+                  {canEdit || canDelete ? (
+                    <div className="mt-3 flex justify-end gap-2">
+                      {canEdit ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleStartEditing(comment)}
+                          disabled={isDeleting}
+                        >
+                          Edit
+                        </Button>
+                      ) : null}
+                      {canDelete ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteComment(comment.id)}
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? 'Deleting…' : 'Delete'}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              )}
             </li>
           );
         })}
