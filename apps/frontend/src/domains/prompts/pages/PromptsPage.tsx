@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { PostgrestError } from '@supabase/postgrest-js';
 import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -68,6 +69,35 @@ const formatTags = (raw: string | undefined) =>
 const buildErrorMessage = (message?: string) =>
   `Failed to load prompts. ${message ?? 'Unknown error'}`;
 
+const PLAN_LIMIT_ERROR_CODE = 'P0001';
+
+const isPostgrestError = (error: unknown): error is PostgrestError =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  typeof (error as { code: unknown }).code === 'string';
+
+const isPlanLimitError = (error: unknown): error is PostgrestError =>
+  isPostgrestError(error) && (error as PostgrestError).code === PLAN_LIMIT_ERROR_CODE;
+
+const buildPlanLimitErrorMessage = (error: PostgrestError) => {
+  const sanitize = (value: string | null | undefined) =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+
+  const extra = [sanitize(error.details), sanitize(error.hint)];
+
+  if (!extra.filter(Boolean).length) {
+    const fallback = sanitize(error.message);
+    return fallback
+      ? `You have reached your prompt limit for this workspace. ${fallback}`
+      : 'You have reached your prompt limit for this workspace.';
+  }
+
+  return `You have reached your prompt limit for this workspace. ${extra
+    .filter(Boolean)
+    .join(' ')}`;
+};
+
 export const PromptsPage = () => {
   const queryClient = useQueryClient();
   const sessionQuery = useSessionQuery();
@@ -75,6 +105,7 @@ export const PromptsPage = () => {
   const [simulateError, setSimulateError] = React.useState(false);
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
+  const [createPromptError, setCreatePromptError] = React.useState<string | null>(null);
   const [promptPendingDeletion, setPromptPendingDeletion] = React.useState<PromptListItem | null>(null);
 
   const workspaceId = activeWorkspace?.id ?? null;
@@ -158,7 +189,7 @@ export const PromptsPage = () => {
     }
   }, [simulateError, queryClient, promptsKey]);
 
-  const createPromptMutation = useMutation<Prompt, Error, PromptFormValues, OptimisticContext>({
+  const createPromptMutation = useMutation<Prompt, Error | PostgrestError, PromptFormValues, OptimisticContext>({
     mutationFn: async (values) => {
       if (!userId) {
         throw new Error('You must be signed in to create prompts.');
@@ -183,6 +214,8 @@ export const PromptsPage = () => {
 
       const mutationQueryKey = promptsQueryKey(workspaceId);
 
+      setCreatePromptError(null);
+
       await queryClient.cancelQueries({ queryKey: mutationQueryKey });
       const previousPrompts = queryClient.getQueryData<PromptListItem[]>(mutationQueryKey) ?? [];
       const optimisticId = `optimistic-${Date.now()}`;
@@ -198,14 +231,43 @@ export const PromptsPage = () => {
 
       return { previousPrompts, optimisticId, queryKey: mutationQueryKey } satisfies OptimisticContext;
     },
-    onError: (_error, _variables, context) => {
+    onError: (error, _variables, context) => {
       if (context) {
         queryClient.setQueryData(context.queryKey, context.previousPrompts);
       }
+
+      if (isPlanLimitError(error)) {
+        const planLimits = planLimitsQuery.data as PlanLimitMap | undefined;
+        const usage = context ? context.previousPrompts.length : prompts.length;
+
+        if (planLimits && planLimitKey) {
+          const evaluation = evaluateIntegerPlanLimit({
+            limits: planLimits,
+            key: planLimitKey,
+            currentUsage: usage,
+          });
+
+          setLastEvaluation(evaluation);
+        } else {
+          setLastEvaluation(null);
+        }
+
+        setUpgradeOpen(true);
+        setCreatePromptError(buildPlanLimitErrorMessage(error));
+        return;
+      }
+
+      setCreatePromptError(
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : 'Failed to create prompt. Please try again.',
+      );
+      console.error(error);
     },
     onSuccess: (newPrompt, _variables, context) => {
       if (!context) {
         queryClient.invalidateQueries({ queryKey: promptsKey });
+        setCreatePromptError(null);
         return;
       }
 
@@ -216,6 +278,8 @@ export const PromptsPage = () => {
 
         return current.map((prompt) => (prompt.id === context.optimisticId ? { ...newPrompt } : prompt));
       });
+
+      setCreatePromptError(null);
     },
     onSettled: (_data, _error, _variables, context) => {
       if (context) {
@@ -341,6 +405,7 @@ export const PromptsPage = () => {
   };
 
   const handleSubmit = form.handleSubmit(async (values) => {
+    setCreatePromptError(null);
     const currentUsage = (queryClient.getQueryData<PromptListItem[]>(promptsKey) ?? prompts).length;
     const planLimits = planLimitsQuery.data as PlanLimitMap | undefined;
 
@@ -372,8 +437,14 @@ export const PromptsPage = () => {
       return;
     }
 
-    await createPromptMutation.mutateAsync(values);
-    form.reset();
+    try {
+      await createPromptMutation.mutateAsync(values);
+      form.reset();
+    } catch (error) {
+      if (!isPlanLimitError(error)) {
+        console.error(error);
+      }
+    }
   });
 
   const renderPrompts = () => {
@@ -468,12 +539,14 @@ export const PromptsPage = () => {
     queryClient.setQueryData<PromptListItem[]>(promptsKey, []);
     setLastEvaluation(null);
     setUpgradeOpen(false);
+    setCreatePromptError(null);
   };
 
   const handleRestoreSeed = () => {
     setSimulateError(false);
     setLastEvaluation(null);
     setUpgradeOpen(false);
+    setCreatePromptError(null);
     queryClient.invalidateQueries({ queryKey: promptsKey });
   };
 
@@ -636,6 +709,10 @@ export const PromptsPage = () => {
                 </button>
               ) : null}
             </div>
+
+            {createPromptError ? (
+              <p className="text-xs text-destructive">{createPromptError}</p>
+            ) : null}
 
             {planLookupError ? (
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-destructive">
