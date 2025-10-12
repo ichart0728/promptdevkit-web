@@ -1,4 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
+import type { PostgrestError } from '@supabase/postgrest-js';
+
+import { PlanLimitError, type IntegerPlanLimitEvaluation } from '@/lib/limits';
 
 import { supabase } from '@/lib/supabase';
 
@@ -87,6 +90,77 @@ const mapRowToTeam = (row: TeamRow): Team => ({
   members: (row.team_members ?? []).map(mapMember),
 });
 
+const PLAN_LIMIT_ERROR_CODE = 'P0001';
+const MEMBERS_PER_TEAM_LIMIT_KEY = 'members_per_team';
+
+const parseDetailKeyValue = (detail: string | null | undefined) => {
+  if (!detail) {
+    return {} as Record<string, string>;
+  }
+
+  return detail.split(' ').reduce<Record<string, string>>((acc, token) => {
+    const [key, value] = token.split('=');
+
+    if (key && typeof value !== 'undefined') {
+      acc[key.trim()] = value.trim();
+    }
+
+    return acc;
+  }, {});
+};
+
+const toInteger = (value: string | undefined): number | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const buildMembersPerTeamEvaluation = (error: PostgrestError): IntegerPlanLimitEvaluation => {
+  const detailMap = parseDetailKeyValue(error.details);
+  const limitValue = toInteger(detailMap.limit);
+  const currentUsageFromDetail = toInteger(detailMap.current);
+  const remaining = toInteger(detailMap.remaining);
+
+  const currentUsage =
+    typeof currentUsageFromDetail === 'number'
+      ? currentUsageFromDetail
+      : typeof limitValue === 'number' && typeof remaining === 'number'
+        ? Math.max(limitValue - remaining, 0)
+        : typeof limitValue === 'number'
+          ? limitValue
+          : 0;
+
+  const delta = 1;
+  const nextUsage = currentUsage + delta;
+
+  return {
+    key: MEMBERS_PER_TEAM_LIMIT_KEY,
+    currentUsage,
+    delta,
+    nextUsage,
+    limitValue: typeof limitValue === 'number' ? limitValue : null,
+    status: 'limit-exceeded',
+    allowed: false,
+    shouldRecommendUpgrade: true,
+  };
+};
+
+const toPlanLimitError = (error: PostgrestError): PlanLimitError => {
+  const planLimitError = new PlanLimitError(buildMembersPerTeamEvaluation(error));
+
+  planLimitError.message = error.message ?? planLimitError.message;
+  planLimitError.cause = error;
+
+  return Object.assign(planLimitError, {
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+  });
+};
+
 // Query key: ['teams', userId]
 export const teamsQueryKey = (userId: string | null) => ['teams', userId ?? 'anonymous'] as const;
 
@@ -169,4 +243,49 @@ export const removeTeamMember = async ({
   if (error) {
     throw error;
   }
+};
+
+type AddTeamMemberParams = {
+  teamId: string;
+  userId: string;
+  role: TeamMemberRole;
+};
+
+export const addTeamMember = async ({
+  teamId,
+  userId,
+  role,
+}: AddTeamMemberParams): Promise<TeamMember> => {
+  const { data, error } = await supabase
+    .from('team_members')
+    .insert(
+      [
+        {
+          team_id: teamId,
+          user_id: userId,
+          role,
+        },
+      ] as never,
+    )
+    .select(
+      `id,role,joined_at,
+       user:users(
+         id,email,name,avatar_url
+       )`,
+    )
+    .single();
+
+  if (error) {
+    if ((error as PostgrestError).code === PLAN_LIMIT_ERROR_CODE) {
+      throw toPlanLimitError(error as PostgrestError);
+    }
+
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Failed to create team member. No data returned from Supabase.');
+  }
+
+  return mapMember(data as TeamMemberRow);
 };
