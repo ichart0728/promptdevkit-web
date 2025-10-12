@@ -6,6 +6,7 @@ type PromptRow = {
   title: string;
   body: string;
   tags: string[] | null;
+  note: string | null;
 };
 
 export type Prompt = {
@@ -13,7 +14,16 @@ export type Prompt = {
   title: string;
   body: string;
   tags: string[];
+  note?: string | null;
 };
+
+const mapPromptRowToPrompt = (row: PromptRow): Prompt => ({
+  id: row.id,
+  title: row.title,
+  body: row.body,
+  tags: row.tags ?? [],
+  note: row.note ?? null,
+});
 
 export type FetchPromptsParams = {
   workspace: Pick<Workspace, 'id' | 'type'>;
@@ -25,7 +35,7 @@ export const fetchPrompts = async ({ workspace }: FetchPromptsParams): Promise<P
   const { id: workspaceId } = workspace;
   const { data, error } = await supabase
     .from('prompts')
-    .select('id,title,body,tags')
+    .select('id,title,body,tags,note')
     .eq('workspace_id', workspaceId)
     .is('deleted_at', null)
     .order('updated_at', { ascending: false });
@@ -36,12 +46,7 @@ export const fetchPrompts = async ({ workspace }: FetchPromptsParams): Promise<P
 
   const rows = (data ?? []) as PromptRow[];
 
-  return rows.map((prompt) => ({
-    id: prompt.id,
-    title: prompt.title,
-    body: prompt.body,
-    tags: prompt.tags ?? [],
-  }));
+  return rows.map(mapPromptRowToPrompt);
 };
 
 export type CreatePromptParams = {
@@ -69,7 +74,7 @@ export const createPrompt = async ({ workspace, userId, title, body, tags }: Cre
   const { data, error } = await supabase
     .from('prompts')
     .insert(insertPayload as never[])
-    .select('id,title,body,tags')
+    .select('id,title,body,tags,note')
     .single<PromptRow>();
 
   if (error) {
@@ -78,12 +83,49 @@ export const createPrompt = async ({ workspace, userId, title, body, tags }: Cre
 
   const row = data as PromptRow;
 
-  return {
-    id: row.id,
-    title: row.title,
-    body: row.body,
-    tags: row.tags ?? [],
-  } satisfies Prompt;
+  return mapPromptRowToPrompt(row);
+};
+
+export type UpdatePromptParams = {
+  workspace: Pick<Workspace, 'id' | 'type'>;
+  userId: string;
+  promptId: string;
+  title: string;
+  body: string;
+  tags: string[];
+  note: string | null;
+};
+
+export const updatePrompt = async ({
+  workspace,
+  userId,
+  promptId,
+  title,
+  body,
+  tags,
+  note,
+}: UpdatePromptParams) => {
+  const { id: workspaceId } = workspace;
+
+  const { data, error } = await supabase
+    .from('prompts')
+    .update({
+      title,
+      body,
+      tags,
+      note,
+      updated_by: userId,
+    } as never)
+    .eq('id', promptId)
+    .eq('workspace_id', workspaceId)
+    .select('id,title,body,tags,note')
+    .single<PromptRow>();
+
+  if (error) {
+    throw error;
+  }
+
+  return mapPromptRowToPrompt(data as PromptRow);
 };
 
 export type DeletePromptParams = {
