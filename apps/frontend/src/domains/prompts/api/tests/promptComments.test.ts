@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: vi.fn(),
+    rpc: vi.fn(),
   },
 }));
 
@@ -11,12 +12,16 @@ import {
   commentThreadCommentsQueryKey,
   commentThreadsQueryKey,
   createComment,
+  createCommentThread,
   deleteComment,
+  deleteCommentThread,
   fetchPromptCommentThreads,
   fetchThreadComments,
+  SupabasePlanLimitError,
 } from '../promptComments';
 
 const supabaseFromMock = supabase.from as unknown as Mock;
+const supabaseRpcMock = supabase.rpc as unknown as Mock;
 
 describe('commentThreadsQueryKey', () => {
   it('returns a stable tuple including pagination params', () => {
@@ -45,6 +50,7 @@ describe('commentThreadCommentsQueryKey', () => {
 describe('fetchPromptCommentThreads', () => {
   beforeEach(() => {
     supabaseFromMock.mockReset();
+    supabaseRpcMock.mockReset();
   });
 
   it('selects comment thread rows filtered by prompt and maps them', async () => {
@@ -86,6 +92,7 @@ describe('fetchPromptCommentThreads', () => {
 describe('fetchThreadComments', () => {
   beforeEach(() => {
     supabaseFromMock.mockReset();
+    supabaseRpcMock.mockReset();
   });
 
   it('selects non-deleted comments for a thread and maps rows', async () => {
@@ -146,6 +153,7 @@ describe('fetchThreadComments', () => {
 describe('createComment', () => {
   beforeEach(() => {
     supabaseFromMock.mockReset();
+    supabaseRpcMock.mockReset();
   });
 
   it('validates the thread belongs to the prompt before inserting and returns the created row', async () => {
@@ -249,9 +257,67 @@ describe('createComment', () => {
   });
 });
 
+describe('createCommentThread', () => {
+  beforeEach(() => {
+    supabaseFromMock.mockReset();
+    supabaseRpcMock.mockReset();
+  });
+
+  it('calls the RPC helper and maps the resulting row', async () => {
+    const rpcResponse = {
+      id: 'thread-99',
+      prompt_id: 'prompt-1',
+      created_by: 'user-1',
+      created_at: '2025-01-01T00:00:00.000Z',
+    };
+
+    supabaseRpcMock.mockResolvedValue({ data: rpcResponse, error: null });
+
+    const result = await createCommentThread({
+      promptId: 'prompt-1',
+      body: 'Initial comment',
+      mentions: ['user-2'],
+    });
+
+    expect(supabaseRpcMock).toHaveBeenCalledWith('create_comment_thread', {
+      p_prompt_id: 'prompt-1',
+      p_body: 'Initial comment',
+      p_mentions: ['user-2'],
+    });
+    expect(result).toEqual({
+      id: 'thread-99',
+      promptId: 'prompt-1',
+      createdBy: 'user-1',
+      createdAt: '2025-01-01T00:00:00.000Z',
+    });
+  });
+
+  it('wraps plan limit violations preserving detail and hint', async () => {
+    supabaseRpcMock.mockResolvedValue({
+      data: null,
+      error: {
+        code: 'P0001',
+        details: 'Plan allows only 2 threads.',
+        hint: 'Upgrade your plan to continue.',
+        message: 'Plan limit exceeded.',
+      },
+    });
+
+    await createCommentThread({ promptId: 'prompt-1', body: 'Initial comment' }).catch((error) => {
+      expect(error).toBeInstanceOf(SupabasePlanLimitError);
+      expect(error).toMatchObject({
+        detail: 'Plan allows only 2 threads.',
+        hint: 'Upgrade your plan to continue.',
+        message: 'Plan limit exceeded.',
+      });
+    });
+  });
+});
+
 describe('deleteComment', () => {
   beforeEach(() => {
     supabaseFromMock.mockReset();
+    supabaseRpcMock.mockReset();
   });
 
   it('deletes the specified comment scoping filters by thread and user', async () => {
@@ -282,5 +348,71 @@ describe('deleteComment', () => {
     expect(eqPromptMock).toHaveBeenCalledWith('comment_threads.prompt_id', 'prompt-1');
     expect(singleMock).toHaveBeenCalled();
     expect(result).toEqual('comment-3');
+  });
+});
+
+describe('deleteCommentThread', () => {
+  beforeEach(() => {
+    supabaseFromMock.mockReset();
+    supabaseRpcMock.mockReset();
+  });
+
+  it('removes the thread scoping by prompt and author', async () => {
+    const singleMock = vi.fn().mockResolvedValue({ data: { id: 'thread-1' }, error: null });
+    const selectMock = vi.fn().mockReturnValue({ single: singleMock });
+    const eqCreatedByMock = vi.fn().mockReturnValue({ select: selectMock });
+    const eqPromptMock = vi.fn().mockReturnValue({ eq: eqCreatedByMock });
+    const eqIdMock = vi.fn().mockReturnValue({ eq: eqPromptMock });
+    const deleteMock = vi.fn().mockReturnValue({ eq: eqIdMock });
+
+    supabaseFromMock.mockReturnValue({
+      delete: deleteMock,
+    } as never);
+
+    const result = await deleteCommentThread({
+      promptId: 'prompt-1',
+      threadId: 'thread-1',
+      userId: 'user-1',
+    });
+
+    expect(deleteMock).toHaveBeenCalled();
+    expect(eqIdMock).toHaveBeenCalledWith('id', 'thread-1');
+    expect(eqPromptMock).toHaveBeenCalledWith('prompt_id', 'prompt-1');
+    expect(eqCreatedByMock).toHaveBeenCalledWith('created_by', 'user-1');
+    expect(selectMock).toHaveBeenCalledWith('id');
+    expect(singleMock).toHaveBeenCalled();
+    expect(result).toEqual('thread-1');
+  });
+
+  it('wraps plan limit errors from Supabase', async () => {
+    const singleMock = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        code: 'P0001',
+        details: 'You cannot delete threads on the current plan.',
+        hint: 'Contact support for assistance.',
+        message: 'Plan restriction.',
+      },
+    });
+    const selectMock = vi.fn().mockReturnValue({ single: singleMock });
+    const eqCreatedByMock = vi.fn().mockReturnValue({ select: selectMock });
+    const eqPromptMock = vi.fn().mockReturnValue({ eq: eqCreatedByMock });
+    const eqIdMock = vi.fn().mockReturnValue({ eq: eqPromptMock });
+    const deleteMock = vi.fn().mockReturnValue({ eq: eqIdMock });
+
+    supabaseFromMock.mockReturnValue({
+      delete: deleteMock,
+    } as never);
+
+    await deleteCommentThread({ promptId: 'prompt-1', threadId: 'thread-1', userId: 'user-1' }).catch(
+      (error) => {
+        expect(error).toBeInstanceOf(SupabasePlanLimitError);
+        expect(error).toMatchObject({
+          detail: 'You cannot delete threads on the current plan.',
+          hint: 'Contact support for assistance.',
+          message: 'Plan restriction.',
+        });
+      },
+    );
   });
 });
