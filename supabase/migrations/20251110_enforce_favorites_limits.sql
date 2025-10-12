@@ -43,7 +43,27 @@ BEGIN
   SELECT COUNT(*)
   INTO v_current_usage
   FROM public.prompt_favorites pf
-  WHERE pf.user_id = NEW.user_id;
+  WHERE pf.user_id = NEW.user_id
+    AND EXISTS (
+      SELECT 1
+      FROM public.prompts p
+      JOIN public.workspaces w ON w.id = p.workspace_id
+      WHERE p.id = pf.prompt_id
+        AND p.deleted_at IS NULL
+        AND (
+          (w.type = 'personal' AND w.owner_user_id = NEW.user_id)
+          OR (
+            w.type = 'team'
+            AND EXISTS (
+              SELECT 1
+              FROM public.team_members tm
+              WHERE tm.team_id = w.team_id
+                AND tm.user_id = NEW.user_id
+                AND tm.role IN ('admin', 'editor', 'viewer')
+            )
+          )
+        )
+    );
 
   IF v_current_usage >= v_limit_value THEN
     v_remaining := GREATEST(v_limit_value - v_current_usage, 0);
