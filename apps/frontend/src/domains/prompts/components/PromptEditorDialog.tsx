@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { toast } from '@/components/common/toast';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   fetchPromptVersions,
   promptVersionsQueryKey,
   type PromptVersion,
+  restorePromptVersion,
 } from '../api/promptVersions';
 import type { Workspace } from '@/domains/workspaces/api/workspaces';
 
@@ -171,6 +173,61 @@ export const PromptEditorDialog = ({
     },
   });
 
+  const restorePromptVersionMutation = useMutation<Prompt, Error, { version: number }>({
+    mutationFn: async ({ version }) => {
+      if (!prompt) {
+        throw new Error('No prompt selected.');
+      }
+
+      return restorePromptVersion({ promptId: prompt.id, version });
+    },
+    onMutate: () => {
+      setServerError(null);
+      setSuccessMessage(null);
+    },
+    onSuccess: (restoredPrompt, variables) => {
+      form.reset({
+        title: restoredPrompt.title,
+        body: restoredPrompt.body,
+        tags: restoredPrompt.tags.join(', '),
+        note: restoredPrompt.note ?? '',
+      });
+      setActiveTab('edit');
+      setSuccessMessage('Prompt version restored successfully.');
+
+      if (workspace) {
+        queryClient.setQueryData<Prompt[]>(promptsQueryKey(workspace.id), (current) => {
+          if (!current) {
+            return current;
+          }
+
+          return current.map((item) => (item.id === restoredPrompt.id ? { ...item, ...restoredPrompt } : item));
+        });
+        queryClient.invalidateQueries({ queryKey: promptsQueryKey(workspace.id) });
+      }
+
+      if (prompt) {
+        queryClient.invalidateQueries({ queryKey: promptVersionsQueryKey(prompt.id) });
+      }
+
+      toast({
+        title: 'Prompt version restored',
+        description: `Version ${variables.version} has been restored.`,
+      });
+    },
+    onError: (error) => {
+      setSuccessMessage(null);
+
+      if (error instanceof Error && error.message.trim().length > 0) {
+        setServerError(error.message);
+        return;
+      }
+
+      setServerError('Failed to restore prompt version. Please try again.');
+      console.error(error);
+    },
+  });
+
   const handleClose = (nextOpen: boolean) => {
     if (!nextOpen) {
       setServerError(null);
@@ -193,6 +250,27 @@ export const PromptEditorDialog = ({
       console.error(error);
     }
   });
+
+  const handleRestoreVersion = async (version: number) => {
+    if (!prompt) {
+      setServerError('No prompt selected.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to restore version ${version}? This will replace the current prompt content.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await restorePromptVersionMutation.mutateAsync({ version });
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const renderHistory = () => {
     if (!promptId) {
@@ -240,6 +318,20 @@ export const PromptEditorDialog = ({
                 Restored from version {version.restoredFromVersion}
               </p>
             ) : null}
+            <div className="mt-3 flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => handleRestoreVersion(version.version)}
+                disabled={restorePromptVersionMutation.isPending}
+              >
+                {restorePromptVersionMutation.isPending &&
+                restorePromptVersionMutation.variables?.version === version.version
+                  ? 'Restoring…'
+                  : 'Restore'}
+              </Button>
+            </div>
           </li>
         ))}
       </ul>
