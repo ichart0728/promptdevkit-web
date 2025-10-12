@@ -83,6 +83,7 @@ const personalWorkspace = {
   name: 'Personal Space',
   type: 'personal' as const,
   teamId: null,
+  archivedAt: null,
 };
 
 const teamWorkspace = {
@@ -90,6 +91,7 @@ const teamWorkspace = {
   name: 'Team Space',
   type: 'team' as const,
   teamId: 'team-123',
+  archivedAt: null,
 };
 
 let activeWorkspaceRef: { current: typeof personalWorkspace | typeof teamWorkspace | null };

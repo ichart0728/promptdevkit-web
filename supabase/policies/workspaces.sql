@@ -7,16 +7,18 @@ CREATE POLICY select_workspaces_for_members
     TO authenticated
     USING (
         (
-            public.workspaces.type = 'personal'
-            AND public.workspaces.owner_user_id = auth.uid()
-        )
-        OR (
-            public.workspaces.type = 'team'
-            AND EXISTS (
-                SELECT 1
-                FROM public.team_members tm
-                WHERE tm.team_id = public.workspaces.team_id
-                  AND tm.user_id = auth.uid()
+            (
+                public.workspaces.type = 'personal'
+                AND public.workspaces.owner_user_id = auth.uid()
+            )
+            OR (
+                public.workspaces.type = 'team'
+                AND EXISTS (
+                    SELECT 1
+                    FROM public.team_members tm
+                    WHERE tm.team_id = public.workspaces.team_id
+                      AND tm.user_id = auth.uid()
+                )
             )
         )
     );

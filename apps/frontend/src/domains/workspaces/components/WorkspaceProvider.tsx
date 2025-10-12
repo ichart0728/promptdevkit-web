@@ -20,10 +20,14 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
 
   const { refetch: queryRefetch } = workspacesQuery;
 
-  const workspaces = React.useMemo(() => (hasSession ? workspacesQuery.data ?? [] : []), [
+  const allWorkspaces = React.useMemo(() => (hasSession ? workspacesQuery.data ?? [] : []), [
     hasSession,
     workspacesQuery.data,
   ]);
+  const workspaces = React.useMemo(
+    () => allWorkspaces.filter((workspace) => !workspace.archivedAt),
+    [allWorkspaces],
+  );
   const [activeWorkspaceId, setActiveWorkspaceId] = React.useState<string | null>(null);
   const pendingActiveWorkspaceIdRef = React.useRef<string | null>(null);
 
@@ -34,7 +38,7 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
       return;
     }
 
-    if (!workspaces.length) {
+    if (!allWorkspaces.length) {
       pendingActiveWorkspaceIdRef.current = null;
       setActiveWorkspaceId(null);
       return;
@@ -43,19 +47,34 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
     setActiveWorkspaceId((currentId) => {
       const pendingId = pendingActiveWorkspaceIdRef.current;
 
-      if (pendingId && workspaces.some((workspace) => workspace.id === pendingId)) {
-        pendingActiveWorkspaceIdRef.current = null;
-        return pendingId;
+      if (pendingId) {
+        const pendingWorkspace = allWorkspaces.find((workspace) => workspace.id === pendingId);
+
+        if (pendingWorkspace) {
+          pendingActiveWorkspaceIdRef.current = null;
+          return pendingWorkspace.id;
+        }
       }
 
-      if (currentId && workspaces.some((workspace) => workspace.id === currentId)) {
-        return currentId;
+      const currentWorkspace = currentId
+        ? allWorkspaces.find((workspace) => workspace.id === currentId) ?? null
+        : null;
+
+      if (currentWorkspace) {
+        return currentWorkspace.id;
+      }
+
+      const fallbackWorkspace = workspaces[0] ?? allWorkspaces[0] ?? null;
+
+      if (fallbackWorkspace) {
+        pendingActiveWorkspaceIdRef.current = null;
+        return fallbackWorkspace.id;
       }
 
       pendingActiveWorkspaceIdRef.current = null;
-      return workspaces[0]?.id ?? null;
+      return null;
     });
-  }, [hasSession, workspaces]);
+  }, [allWorkspaces, hasSession, workspaces]);
 
   const handleSetActiveWorkspaceId = React.useCallback(
     (workspaceId: string) => {
@@ -67,7 +86,7 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
           return currentId;
         }
 
-        const exists = workspaces.some((workspace) => workspace.id === workspaceId);
+        const exists = allWorkspaces.some((workspace) => workspace.id === workspaceId);
 
         if (exists) {
           pendingActiveWorkspaceIdRef.current = null;
@@ -77,12 +96,12 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
         return currentId;
       });
     },
-    [workspaces],
+    [allWorkspaces],
   );
 
   const activeWorkspace = React.useMemo(
-    () => workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
-    [workspaces, activeWorkspaceId],
+    () => allWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
+    [allWorkspaces, activeWorkspaceId],
   );
 
   const refetchWorkspaces = React.useCallback(async (): Promise<Workspace[]> => {

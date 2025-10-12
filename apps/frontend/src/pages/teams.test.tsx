@@ -144,6 +144,7 @@ describe('TeamsPage', () => {
         name: 'Prompt Builders HQ',
         type: 'team',
         teamId: 'team-1',
+        archivedAt: null,
       },
     ]);
 

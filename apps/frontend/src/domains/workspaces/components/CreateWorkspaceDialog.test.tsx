@@ -121,6 +121,7 @@ describe('CreateWorkspaceDialog', () => {
       name: 'Sandbox',
       type: 'personal' as const,
       teamId: null,
+      archivedAt: null,
     };
     createWorkspaceMock.mockResolvedValue(workspace);
 
@@ -189,6 +190,7 @@ describe('CreateWorkspaceDialog', () => {
       name: 'Team Lab',
       type: 'team' as const,
       teamId: 'team-1',
+      archivedAt: null,
     };
     createWorkspaceMock.mockResolvedValue(workspace);
 

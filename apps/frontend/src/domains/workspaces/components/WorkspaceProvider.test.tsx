@@ -61,6 +61,7 @@ const buildWorkspace = (id: string, overrides: Partial<Workspace> = {}): Workspa
   name: `Workspace ${id}`,
   type: 'personal',
   teamId: null,
+  archivedAt: null,
   ...overrides,
 });
 
@@ -174,6 +175,56 @@ describe('WorkspaceProvider', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('active-workspace')).toHaveTextContent('none');
+    });
+  });
+
+  it('keeps an archived workspace active when it is the only workspace', async () => {
+    fetchWorkspacesMock.mockResolvedValue([buildWorkspace('workspace-1')]);
+
+    const { queryClient } = renderWithProvider();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+    });
+
+    act(() => {
+      queryClient.setQueryData(
+        ['workspaces', 'user-1'],
+        [buildWorkspace('workspace-1', { archivedAt: '2024-01-01T00:00:00Z' })],
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+      expect(screen.getByTestId('workspace-count')).toHaveTextContent('0');
+    });
+  });
+
+  it('keeps an archived workspace active when other active workspaces exist', async () => {
+    fetchWorkspacesMock.mockResolvedValue([
+      buildWorkspace('workspace-1'),
+      buildWorkspace('workspace-2'),
+    ]);
+
+    const { queryClient } = renderWithProvider();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+    });
+
+    act(() => {
+      queryClient.setQueryData(
+        ['workspaces', 'user-1'],
+        [
+          buildWorkspace('workspace-1', { archivedAt: '2024-01-01T00:00:00Z' }),
+          buildWorkspace('workspace-2'),
+        ],
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
+      expect(screen.getByTestId('workspace-count')).toHaveTextContent('1');
     });
   });
 });

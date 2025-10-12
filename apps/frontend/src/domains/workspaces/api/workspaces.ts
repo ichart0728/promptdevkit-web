@@ -7,6 +7,7 @@ export type Workspace = {
   name: string;
   type: 'personal' | 'team';
   teamId: string | null;
+  archivedAt: string | null;
 };
 
 type WorkspaceRow = {
@@ -14,6 +15,7 @@ type WorkspaceRow = {
   name: string;
   type: Workspace['type'];
   team_id: string | null;
+  archived_at: string | null;
 };
 
 export const workspacesQueryKey = (userId: string | null) => ['workspaces', userId ?? 'anonymous'] as const;
@@ -23,12 +25,13 @@ const mapRowToWorkspace = (row: WorkspaceRow): Workspace => ({
   name: row.name,
   type: row.type,
   teamId: row.team_id,
+  archivedAt: row.archived_at,
 });
 
 export const fetchWorkspaces = async (): Promise<Workspace[]> => {
   const { data, error } = await supabase
     .from('workspaces')
-    .select('id,name,type,team_id')
+    .select('id,name,type,team_id,archived_at')
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -65,6 +68,47 @@ export const createWorkspace = async ({
 
   if (!row) {
     throw new Error('Workspace creation did not return a result.');
+  }
+
+  return mapRowToWorkspace(row);
+};
+
+export type ManageWorkspaceAction = 'rename' | 'archive' | 'restore';
+
+export type ManageWorkspaceParams =
+  | {
+      workspaceId: string;
+      action: 'archive' | 'restore';
+    }
+  | {
+      workspaceId: string;
+      action: 'rename';
+      name: string;
+    };
+
+type ManageWorkspaceRpcInput = {
+  workspace_id: string;
+  action: ManageWorkspaceAction;
+  workspace_name?: string | null;
+};
+
+export const manageWorkspace = async (params: ManageWorkspaceParams): Promise<Workspace> => {
+  const rpcInput: ManageWorkspaceRpcInput = {
+    workspace_id: params.workspaceId,
+    action: params.action,
+    workspace_name: params.action === 'rename' ? params.name : null,
+  };
+
+  const { data, error } = await supabase.rpc('manage_workspace', rpcInput as never);
+
+  if (error) {
+    throw error;
+  }
+
+  const row = data as WorkspaceRow | null;
+
+  if (!row) {
+    throw new Error('Workspace update did not return a result.');
   }
 
   return mapRowToWorkspace(row);
