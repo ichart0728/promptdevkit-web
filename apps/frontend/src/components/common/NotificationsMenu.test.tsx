@@ -1,7 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
-
 import { NotificationsMenu } from './NotificationsMenu';
 import type { NotificationItem } from '@/domains/notifications/types';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
@@ -15,6 +14,7 @@ vi.mock('@/lib/supabase', () => ({
       eq: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       range: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
     })),
   },
 }));
@@ -55,9 +55,14 @@ const createMutationResult = (
 ): ReturnType<typeof useNotificationReadMutation> =>
   ({
     mutate: vi.fn(),
+    mutateAll: vi.fn(),
     isPending: false,
+    isMutatingAll: false,
+    markAllError: null,
     ...overrides,
   } as unknown as ReturnType<typeof useNotificationReadMutation>);
+
+const renderMenu = () => render(<NotificationsMenu userId="11111111-1111-4111-8111-111111111111" />);
 
 describe('NotificationsMenu', () => {
   beforeEach(() => {
@@ -72,7 +77,7 @@ describe('NotificationsMenu', () => {
       createQueryResult({ data: { pages: [[notification]], pageParams: [0] } }),
     );
 
-    render(<NotificationsMenu userId="11111111-1111-4111-8111-111111111111" />);
+    renderMenu();
 
     const button = screen.getByRole('button', { name: 'Notifications' });
 
@@ -85,7 +90,7 @@ describe('NotificationsMenu', () => {
       createQueryResult({ data: { pages: [[createNotification()]], pageParams: [0] } }),
     );
 
-    render(<NotificationsMenu userId="11111111-1111-4111-8111-111111111111" />);
+    renderMenu();
 
     expect(screen.getByRole('button', { name: '1 unread notifications' })).toBeInTheDocument();
   });
@@ -99,11 +104,42 @@ describe('NotificationsMenu', () => {
     );
     mockedUseNotificationReadMutation.mockReturnValue(createMutationResult({ mutate }));
 
-    render(<NotificationsMenu userId="11111111-1111-4111-8111-111111111111" />);
+    renderMenu();
 
     await user.click(screen.getByRole('button', { name: '1 unread notifications' }));
     await user.click(screen.getByRole('button', { name: 'Mark as read' }));
 
     expect(mutate).toHaveBeenCalledWith({ id: 'notification-1', read: true });
+  });
+
+  it('marks all notifications as read from the menu', async () => {
+    const user = userEvent.setup();
+    const mutateAll = vi.fn();
+
+    mockedUseNotificationsQuery.mockReturnValue(
+      createQueryResult({ data: { pages: [[createNotification()]], pageParams: [0] } }),
+    );
+    mockedUseNotificationReadMutation.mockReturnValue(createMutationResult({ mutateAll }));
+
+    renderMenu();
+
+    await user.click(screen.getByRole('button', { name: '1 unread notifications' }));
+    await user.click(screen.getByRole('button', { name: 'Mark all' }));
+
+    expect(mutateAll).toHaveBeenCalled();
+  });
+
+  it('provides a link to the notifications page', async () => {
+    const user = userEvent.setup();
+
+    mockedUseNotificationsQuery.mockReturnValue(
+      createQueryResult({ data: { pages: [[createNotification()]], pageParams: [0] } }),
+    );
+
+    renderMenu();
+
+    await user.click(screen.getByRole('button', { name: '1 unread notifications' }));
+
+    expect(screen.getByRole('link', { name: 'View all' })).toHaveAttribute('href', '/notifications');
   });
 });

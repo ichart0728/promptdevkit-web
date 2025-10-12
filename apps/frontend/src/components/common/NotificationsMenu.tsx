@@ -5,28 +5,12 @@ import { Button } from '@/components/ui/button';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
 import type { NotificationItem } from '@/domains/notifications/types';
-
-const flattenPages = (pages: NotificationItem[][]) =>
-  pages.reduce<NotificationItem[]>((accumulator, page) => accumulator.concat(page), []);
-
-const getNotificationTitle = (notification: NotificationItem) =>
-  typeof notification.payload.title === 'string'
-    ? notification.payload.title
-    : 'Notification';
-
-const getNotificationMessage = (notification: NotificationItem) => {
-  const { message, body } = notification.payload;
-
-  if (typeof message === 'string' && message.trim().length > 0) {
-    return message;
-  }
-
-  if (typeof body === 'string' && body.trim().length > 0) {
-    return body;
-  }
-
-  return null;
-};
+import {
+  countUnreadNotifications,
+  flattenNotificationPages,
+  getNotificationMessage,
+  getNotificationTitle,
+} from '@/domains/notifications/utils';
 
 const BellIcon = (props: SVGProps<SVGSVGElement>) => (
   <svg
@@ -65,18 +49,9 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
   } = useNotificationsQuery(userId);
   const readMutation = useNotificationReadMutation(userId);
 
-  const notifications = useMemo(() => {
-    if (!data?.pages) {
-      return [] as NotificationItem[];
-    }
+  const notifications = useMemo(() => flattenNotificationPages(data?.pages), [data?.pages]);
 
-    return flattenPages(data.pages);
-  }, [data?.pages]);
-
-  const unreadCount = useMemo(
-    () => notifications.filter((notification) => !notification.read_at).length,
-    [notifications],
-  );
+  const unreadCount = useMemo(() => countUnreadNotifications(notifications), [notifications]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -134,6 +109,18 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
     readMutation.mutate({ id: notification.id, read: !notification.read_at });
   };
 
+  const handleMarkAllAsRead = () => {
+    if (unreadCount === 0) {
+      return;
+    }
+
+    readMutation.mutateAll();
+  };
+
+  const handleNavigateToPage = () => {
+    setIsOpen(false);
+  };
+
   return (
     <div className="relative" ref={containerRef}>
       <Button
@@ -154,7 +141,24 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
       {isOpen ? (
         <div className="absolute right-0 z-10 mt-2 w-80 rounded-md border border-border bg-popover shadow-lg">
           <div className="border-b border-border px-4 py-2">
-            <p className="text-sm font-semibold text-foreground">Notifications</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">Notifications</p>
+              <Button
+                disabled={readMutation.isMutatingAll || unreadCount === 0}
+                onClick={handleMarkAllAsRead}
+                size="sm"
+                variant="ghost"
+              >
+                {readMutation.isMutatingAll ? 'Marking…' : 'Mark all'}
+              </Button>
+            </div>
+            {readMutation.markAllError ? (
+              <p className="mt-2 text-xs text-destructive" role="alert">
+                {readMutation.markAllError instanceof Error
+                  ? readMutation.markAllError.message
+                  : 'Failed to mark notifications as read.'}
+              </p>
+            ) : null}
           </div>
           {isPending ? (
             <div className="space-y-3 p-4">
@@ -226,6 +230,11 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
               </Button>
             </div>
           ) : null}
+          <div className={`px-4 py-2 ${hasNextPage ? 'border-t border-border' : ''}`}>
+            <Button asChild size="sm" variant="link" className="px-0" onClick={handleNavigateToPage}>
+              <a href="/notifications">View all</a>
+            </Button>
+          </div>
         </div>
       ) : null}
     </div>
