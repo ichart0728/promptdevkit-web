@@ -21,6 +21,7 @@ import {
   type CommentThread,
 } from '../../api/promptComments';
 import { PlanLimitError } from '@/lib/limits';
+import { fetchPlanLimits, fetchUserPlanId } from '../../api/planLimits';
 import type * as ToastModule from '@/components/common/toast';
 
 vi.mock('../../api/prompts', () => ({
@@ -51,6 +52,13 @@ vi.mock('../../api/promptComments', () => ({
   ) => ['prompt-comments', promptId, 'threads', threadId, 'comments', pagination] as const,
 }));
 
+vi.mock('../../api/planLimits', () => ({
+  fetchUserPlanId: vi.fn(),
+  fetchPlanLimits: vi.fn(),
+  userPlanQueryKey: (userId: string | null) => ['user-plan', userId] as const,
+  planLimitsQueryKey: (planId: string) => ['plan-limits', planId] as const,
+}));
+
 type ToastFn = typeof ToastModule.toast;
 
 const toastMock = vi.fn();
@@ -66,6 +74,8 @@ const fetchPromptCommentThreadsMock = vi.mocked(fetchPromptCommentThreads);
 const fetchThreadCommentsMock = vi.mocked(fetchThreadComments);
 const createCommentMock = vi.mocked(createComment);
 const deleteCommentMock = vi.mocked(deleteComment);
+const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
+const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -116,6 +126,15 @@ const renderPromptEditor = ({ prompt = basePrompt }: RenderPromptEditorOptions =
 describe('PromptEditorDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fetchUserPlanIdMock.mockResolvedValue('plan-free');
+    fetchPlanLimitsMock.mockResolvedValue({
+      comment_threads_per_prompt: {
+        key: 'comment_threads_per_prompt',
+        value_int: 5,
+        value_str: null,
+        value_json: null,
+      },
+    });
   });
 
   afterEach(() => {
