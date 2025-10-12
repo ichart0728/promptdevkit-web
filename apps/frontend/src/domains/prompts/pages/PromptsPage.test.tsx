@@ -2,6 +2,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
+import type { PostgrestError } from '@supabase/postgrest-js';
 
 import type { Prompt } from '@/domains/prompts/api/prompts';
 import { PromptsPage } from './PromptsPage';
@@ -284,6 +285,46 @@ describe('PromptsPage', () => {
 
     await screen.findByText('Upgrade to unlock more capacity');
     expect(createPromptMock).not.toHaveBeenCalled();
+  });
+
+  it('opens the upgrade dialog when Supabase rejects the mutation due to plan limits', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'existing',
+        title: 'Existing prompt',
+        body: 'Existing body',
+        tags: [],
+      },
+    ]);
+
+    const planLimitError = {
+      name: 'PostgrestError',
+      message: 'Prompt quota reached',
+      details: 'Current plan allows 1 prompt.',
+      hint: 'Upgrade to add more capacity.',
+      code: 'P0001',
+    } satisfies Partial<PostgrestError> & { code: string };
+
+    createPromptMock.mockRejectedValueOnce(planLimitError);
+    const user = userEvent.setup();
+
+    renderPromptsPage();
+
+    await screen.findByRole('button', { name: 'Create prompt' });
+
+    await user.type(screen.getByLabelText('Title'), 'Over quota');
+    await user.type(screen.getByLabelText('Prompt body'), 'Body');
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Create prompt' }));
+    });
+
+    await screen.findByText(
+      'You have reached your prompt limit for this workspace. Current plan allows 1 prompt. Upgrade to add more capacity.',
+    );
+    await screen.findByText('Upgrade to unlock more capacity');
+
+    expect(createPromptMock).toHaveBeenCalledTimes(1);
   });
 
   it('deletes a prompt and updates plan usage counts and evaluation state', async () => {
