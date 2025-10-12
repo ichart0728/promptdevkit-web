@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import type { PostgrestError } from '@supabase/postgrest-js';
 import * as React from 'react';
 import { useForm } from 'react-hook-form';
@@ -32,6 +32,8 @@ import {
   planLimitsQueryKey,
   userPlanQueryKey,
 } from '../api/planLimits';
+import { fetchPromptFavorite, promptFavoritesQueryKey } from '../api/promptFavorites';
+import { PromptFavoriteButton } from '../components/PromptFavoriteButton';
 
 const PROMPTS_PER_PERSONAL_WS_LIMIT_KEY = 'prompts_per_personal_ws';
 const PROMPTS_PER_TEAM_WS_LIMIT_KEY = 'prompts_per_team_ws';
@@ -49,7 +51,11 @@ const promptSchema = z.object({
 
 export type PromptFormValues = z.infer<typeof promptSchema>;
 
-type PromptListItemData = Prompt & { isOptimistic?: boolean };
+type PromptListItemData = Prompt & { isOptimistic?: boolean; isFavorite?: boolean };
+
+type PromptFavoritesMap = Record<string, boolean>;
+
+const EMPTY_FAVORITES_MAP: PromptFavoritesMap = {};
 
 type OptimisticContext = {
   previousPrompts: PromptListItemData[];
@@ -67,9 +73,22 @@ type PromptListItemRowProps = {
   onEdit: (prompt: PromptListItemData) => void;
   onDelete: (prompt: PromptListItemData) => void;
   disableDelete: boolean;
+  userId: string | null;
+  workspaceId: string | null;
+  promptsQueryKey: QueryKey;
+  favoritesQueryKey: QueryKey;
 };
 
-const PromptListItemRow = ({ prompt, onEdit, onDelete, disableDelete }: PromptListItemRowProps) => (
+const PromptListItemRow = ({
+  prompt,
+  onEdit,
+  onDelete,
+  disableDelete,
+  userId,
+  workspaceId,
+  promptsQueryKey,
+  favoritesQueryKey,
+}: PromptListItemRowProps) => (
   <li key={prompt.id}>
     <div className="space-y-3 rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -81,27 +100,36 @@ const PromptListItemRow = ({ prompt, onEdit, onDelete, disableDelete }: PromptLi
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => onEdit(prompt)}
-            disabled={prompt.isOptimistic}
-            aria-label={`Edit prompt ${prompt.title}`}
-          >
-            Edit
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            size="sm"
-            onClick={() => onDelete(prompt)}
-            disabled={prompt.isOptimistic || disableDelete}
-            aria-label={`Delete prompt ${prompt.title}`}
-          >
-            Delete
-          </Button>
+        <div className="flex items-center gap-2">
+          <PromptFavoriteButton
+            prompt={prompt}
+            userId={userId}
+            workspaceId={workspaceId}
+            promptsQueryKey={promptsQueryKey}
+            favoritesQueryKey={favoritesQueryKey}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onEdit(prompt)}
+              disabled={prompt.isOptimistic}
+              aria-label={`Edit prompt ${prompt.title}`}
+            >
+              Edit
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => onDelete(prompt)}
+              disabled={prompt.isOptimistic || disableDelete}
+              aria-label={`Delete prompt ${prompt.title}`}
+            >
+              Delete
+            </Button>
+          </div>
         </div>
       </div>
       <p className="text-sm text-muted-foreground">{prompt.body}</p>
@@ -156,6 +184,30 @@ const buildPlanLimitErrorMessage = (error: PostgrestError) => {
     .join(' ')}`;
 };
 
+type FetchFavoritesParams = {
+  promptIds: string[];
+  userId: string;
+};
+
+const fetchFavoritesForPromptIds = async ({ promptIds, userId }: FetchFavoritesParams): Promise<PromptFavoritesMap> => {
+  if (promptIds.length === 0) {
+    return {};
+  }
+
+  const favorites = await Promise.all(
+    promptIds.map(async (promptId) => {
+      const favorite = await fetchPromptFavorite({ promptId, userId });
+      return [promptId, Boolean(favorite)] as const;
+    }),
+  );
+
+  return favorites.reduce<PromptFavoritesMap>((accumulator, [promptId, isFavorite]) => {
+    // eslint-disable-next-line no-param-reassign -- accumulator mutation is intentional for performance.
+    accumulator[promptId] = isFavorite;
+    return accumulator;
+  }, {});
+};
+
 export const PromptsPage = () => {
   const queryClient = useQueryClient();
   const sessionQuery = useSessionQuery();
@@ -167,6 +219,7 @@ export const PromptsPage = () => {
   const [promptPendingDeletion, setPromptPendingDeletion] = React.useState<PromptListItemData | null>(null);
   const [promptBeingEdited, setPromptBeingEdited] = React.useState<PromptListItemData | null>(null);
   const [editorOpen, setEditorOpen] = React.useState(false);
+  const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
 
   const workspaceId = activeWorkspace?.id ?? null;
   const workspaceType = activeWorkspace?.type ?? null;
@@ -177,6 +230,14 @@ export const PromptsPage = () => {
     [workspaceId],
   );
   const userId = sessionQuery.data?.user?.id ?? null;
+  const favoritesQueryKeyValue = React.useMemo(
+    () => promptFavoritesQueryKey(workspaceId && userId ? `${workspaceId}:${userId}` : null),
+    [workspaceId, userId],
+  );
+
+  React.useEffect(() => {
+    setShowFavoritesOnly(false);
+  }, [workspaceId]);
 
   const promptsQuery = useQuery({
     queryKey: promptsKey,
@@ -479,6 +540,58 @@ export const PromptsPage = () => {
   const cachedPrompts = queryClient.getQueryData<PromptListItemData[]>(promptsKey) ?? [];
   const serverPrompts = (promptsQuery.data ?? []) as PromptListItemData[];
   const prompts = cachedPrompts.length ? cachedPrompts : serverPrompts;
+  const promptIds = React.useMemo(() => prompts.map((prompt) => prompt.id), [prompts]);
+  const promptIdsSignature = React.useMemo(() => promptIds.join(','), [promptIds]);
+
+  React.useEffect(() => {
+    if (!workspaceId || !userId) {
+      return;
+    }
+
+    if (promptIds.length === 0) {
+      queryClient.setQueryData<PromptFavoritesMap>(favoritesQueryKeyValue, {});
+      return;
+    }
+
+    queryClient.invalidateQueries({ queryKey: favoritesQueryKeyValue });
+  }, [
+    promptIds.length,
+    promptIdsSignature,
+    workspaceId,
+    userId,
+    favoritesQueryKeyValue,
+    queryClient,
+  ]);
+
+  const favoritesQuery = useQuery<PromptFavoritesMap>({
+    queryKey: favoritesQueryKeyValue,
+    queryFn: () => fetchFavoritesForPromptIds({ promptIds, userId: userId as string }),
+    enabled: !!workspaceId && !!userId && promptIds.length > 0,
+    placeholderData: () => queryClient.getQueryData<PromptFavoritesMap>(favoritesQueryKeyValue) ?? {},
+  });
+
+  const favoritesMap = favoritesQuery.data ?? EMPTY_FAVORITES_MAP;
+  const promptsWithFavorites = React.useMemo(() => {
+    if (Object.keys(favoritesMap).length === 0) {
+      return prompts;
+    }
+
+    return prompts.map((prompt) => {
+      const isFavorite = favoritesMap[prompt.id] ?? prompt.isFavorite ?? false;
+
+      if (prompt.isFavorite === isFavorite) {
+        return prompt;
+      }
+
+      return { ...prompt, isFavorite } satisfies PromptListItemData;
+    });
+  }, [favoritesMap, prompts]);
+  const shouldFilterFavorites = showFavoritesOnly && favoritesQuery.status !== 'error';
+  const favoritesFilterLabel = showFavoritesOnly ? 'Show all prompts' : 'Show favorites only';
+  const visiblePrompts = React.useMemo(
+    () => (shouldFilterFavorites ? promptsWithFavorites.filter((prompt) => prompt.isFavorite) : promptsWithFavorites),
+    [promptsWithFavorites, shouldFilterFavorites],
+  );
   const currentUsage = prompts.length;
 
   const handleUpgradeDialogChange = (open: boolean) => {
@@ -576,18 +689,41 @@ export const PromptsPage = () => {
       );
     }
 
+    if (showFavoritesOnly && favoritesQuery.status === 'pending') {
+      return <div className="rounded-md border border-dashed p-6 text-sm">Loading favorite prompts…</div>;
+    }
+
+    if (shouldFilterFavorites && visiblePrompts.length === 0) {
+      return (
+        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+          No favorite prompts yet. Toggle favorites to curate this list or disable the filter to see all prompts.
+        </div>
+      );
+    }
+
     return (
-      <ul className="space-y-3">
-        {prompts.map((prompt) => (
-          <PromptListItemRow
-            key={prompt.id}
-            prompt={prompt}
-            onEdit={handlePromptEditClick}
-            onDelete={handlePromptDeleteClick}
-            disableDelete={deletePromptMutation.isPending}
-          />
-        ))}
-      </ul>
+      <div className="space-y-3">
+        {favoritesQuery.status === 'error' ? (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+            Failed to load favorites. Showing all prompts.
+          </div>
+        ) : null}
+        <ul className="space-y-3">
+          {visiblePrompts.map((prompt) => (
+            <PromptListItemRow
+              key={prompt.id}
+              prompt={prompt}
+              onEdit={handlePromptEditClick}
+              onDelete={handlePromptDeleteClick}
+              disableDelete={deletePromptMutation.isPending}
+              userId={userId}
+              workspaceId={workspaceId}
+              promptsQueryKey={promptsKey}
+              favoritesQueryKey={favoritesQueryKeyValue}
+            />
+          ))}
+        </ul>
+      </div>
     );
   };
 
@@ -596,6 +732,10 @@ export const PromptsPage = () => {
     setLastEvaluation(null);
     setUpgradeOpen(false);
     setCreatePromptError(null);
+    setShowFavoritesOnly(false);
+    if (workspaceId && userId) {
+      queryClient.setQueryData<PromptFavoritesMap>(favoritesQueryKeyValue, {});
+    }
   };
 
   const handleRestoreSeed = () => {
@@ -604,6 +744,10 @@ export const PromptsPage = () => {
     setUpgradeOpen(false);
     setCreatePromptError(null);
     queryClient.invalidateQueries({ queryKey: promptsKey });
+    if (workspaceId && userId) {
+      setShowFavoritesOnly(false);
+      queryClient.invalidateQueries({ queryKey: favoritesQueryKeyValue });
+    }
   };
 
   const isLoading = promptsQuery.status === 'pending' && prompts.length === 0 && !!workspaceId;
@@ -830,23 +974,35 @@ export const PromptsPage = () => {
         </div>
 
         <div className="space-y-4">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col">
-              <h2 className="text-lg font-semibold">
-                Workspace prompts{workspaceName ? ` · ${workspaceName}` : ''}
-              </h2>
-              {workspaceType ? (
-                <span className="text-xs uppercase text-muted-foreground">
-                  {workspaceType === 'team' ? 'Team workspace' : 'Personal workspace'}
-                </span>
-              ) : null}
-            </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col">
+            <h2 className="text-lg font-semibold">
+              Workspace prompts{workspaceName ? ` · ${workspaceName}` : ''}
+            </h2>
+            {workspaceType ? (
+              <span className="text-xs uppercase text-muted-foreground">
+                {workspaceType === 'team' ? 'Team workspace' : 'Personal workspace'}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
             <span className="text-sm text-muted-foreground">
               Query key: [{promptsKey[0]}, "{promptsKey[1]}"]
             </span>
+            <Button
+              type="button"
+              variant={showFavoritesOnly ? 'default' : 'outline'}
+              size="sm"
+              aria-pressed={showFavoritesOnly}
+              onClick={() => setShowFavoritesOnly((previous) => !previous)}
+              disabled={prompts.length === 0}
+            >
+              {favoritesFilterLabel}
+            </Button>
           </div>
-          {renderPrompts()}
         </div>
+        {renderPrompts()}
+      </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

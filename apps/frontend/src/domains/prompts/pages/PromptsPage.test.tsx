@@ -8,6 +8,7 @@ import type { Prompt } from '@/domains/prompts/api/prompts';
 import { PromptsPage } from './PromptsPage';
 import { fetchPrompts, createPrompt, deletePrompt } from '@/domains/prompts/api/prompts';
 import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimits';
+import { fetchPromptFavorite, togglePromptFavorite } from '@/domains/prompts/api/promptFavorites';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useActiveWorkspace } from '@/domains/workspaces/hooks/useActiveWorkspace';
 
@@ -30,6 +31,12 @@ vi.mock('@/domains/prompts/api/planLimits', () => ({
   fetchPlanLimits: vi.fn(),
 }));
 
+vi.mock('@/domains/prompts/api/promptFavorites', () => ({
+  promptFavoritesQueryKey: (promptId: string | null) => ['prompt-favorites', promptId] as const,
+  fetchPromptFavorite: vi.fn(),
+  togglePromptFavorite: vi.fn(),
+}));
+
 vi.mock('../components/PromptEditorDialog', () => ({
   PromptEditorDialog: () => null,
 }));
@@ -46,6 +53,8 @@ const createPromptMock = vi.mocked(createPrompt);
 const deletePromptMock = vi.mocked(deletePrompt);
 const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
 const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
+const fetchPromptFavoriteMock = vi.mocked(fetchPromptFavorite);
+const togglePromptFavoriteMock = vi.mocked(togglePromptFavorite);
 const useSessionQueryMock = vi.mocked(useSessionQuery);
 const useActiveWorkspaceMock = vi.mocked(useActiveWorkspace);
 
@@ -118,6 +127,8 @@ describe('PromptsPage', () => {
         value_json: null,
       },
     });
+    fetchPromptFavoriteMock.mockResolvedValue(null);
+    togglePromptFavoriteMock.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -211,6 +222,86 @@ describe('PromptsPage', () => {
 
     await screen.findByRole('heading', { level: 3, name: 'New prompt' });
     await screen.findByText('#summary');
+  });
+
+  it('toggles prompt favorites and filters the list', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: [],
+      },
+      {
+        id: 'prompt-2',
+        title: 'Prompt Beta',
+        body: 'Summarize the meeting notes.',
+        tags: [],
+      },
+    ]);
+    const favoriteIds = new Set(['prompt-2']);
+    fetchPromptFavoriteMock.mockImplementation(async ({ promptId }) =>
+      favoriteIds.has(promptId)
+        ? {
+            id: 'favorite-1',
+            promptId,
+            userId: 'user-1',
+            createdAt: new Date().toISOString(),
+          }
+        : null,
+    );
+    togglePromptFavoriteMock.mockImplementation(async ({ promptId, shouldFavorite }) => {
+      if (shouldFavorite) {
+        favoriteIds.add(promptId);
+        return {
+          id: 'favorite-2',
+          promptId,
+          userId: 'user-1',
+          createdAt: new Date().toISOString(),
+        };
+      }
+
+      favoriteIds.delete(promptId);
+      return null;
+    });
+    const user = userEvent.setup();
+
+    renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
+    const favoritesToggle = await screen.findByRole('button', {
+      name: 'Toggle favorite for prompt Prompt Beta',
+    });
+    expect(favoritesToggle).toHaveAttribute('aria-pressed', 'true');
+
+    const filterButton = await screen.findByRole('button', { name: 'Show favorites only' });
+    await user.click(filterButton);
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Beta' });
+    expect(screen.queryByRole('heading', { level: 3, name: 'Prompt Alpha' })).not.toBeInTheDocument();
+
+    await user.click(favoritesToggle);
+
+    await waitFor(() => {
+      expect(togglePromptFavoriteMock).toHaveBeenCalledWith({
+        promptId: 'prompt-2',
+        userId: 'user-1',
+        shouldFavorite: false,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Toggle favorite for prompt Prompt Beta' })).toBeNull();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Show all prompts' }));
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Toggle favorite for prompt Prompt Beta' }),
+      ).toHaveAttribute('aria-pressed', 'false');
+    });
   });
 
   it('recommends an upgrade when the prompt limit is reached', async () => {
@@ -426,6 +517,8 @@ describe('PromptsPage workspace awareness', () => {
         value_json: null,
       },
     });
+    fetchPromptFavoriteMock.mockResolvedValue(null);
+    togglePromptFavoriteMock.mockResolvedValue(null);
   });
 
   afterEach(() => {
