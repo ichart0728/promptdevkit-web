@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { NotificationsMenu } from '@/components/common/NotificationsMenu';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -31,6 +32,7 @@ export const AuthMenu = () => {
     return (
       <div className="flex flex-col items-end gap-1">
         <div className="flex items-center gap-2">
+          <NotificationsMenu userId={session.user?.id ?? null} />
           {session.user?.email ? (
             <span className="hidden text-sm text-muted-foreground sm:inline">{session.user.email}</span>
           ) : null}
