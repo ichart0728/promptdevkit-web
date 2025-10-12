@@ -125,8 +125,67 @@ CREATE POLICY delete_comment_threads_for_authors_and_admins
         )
     );
 
-ALTER POLICY update_comments_for_authors_and_managers
+DROP POLICY IF EXISTS update_comments_for_authors_and_managers ON public.comments;
+
+CREATE POLICY update_comments_for_authors_and_managers
     ON public.comments
+    FOR UPDATE
+    TO authenticated
+    USING (
+        (
+            public.comments.created_by = auth.uid()
+            AND EXISTS (
+                SELECT 1
+                FROM public.comment_threads ct
+                JOIN public.prompts p ON p.id = ct.prompt_id
+                WHERE ct.id = public.comments.thread_id
+                  AND (
+                      EXISTS (
+                          SELECT 1
+                          FROM public.workspaces w
+                          WHERE w.id = p.workspace_id
+                            AND w.type = 'personal'
+                            AND w.owner_user_id = auth.uid()
+                      )
+                      OR EXISTS (
+                          SELECT 1
+                          FROM public.workspaces w
+                          JOIN public.team_members tm ON tm.team_id = w.team_id
+                          WHERE w.id = p.workspace_id
+                            AND w.type = 'team'
+                            AND tm.user_id = auth.uid()
+                            AND tm.role IN ('admin', 'editor', 'viewer')
+                      )
+                  )
+            )
+        )
+        OR (
+            EXISTS (
+                SELECT 1
+                FROM public.comment_threads ct
+                JOIN public.prompts p ON p.id = ct.prompt_id
+                WHERE ct.id = public.comments.thread_id
+                  AND (
+                      EXISTS (
+                          SELECT 1
+                          FROM public.workspaces w
+                          WHERE w.id = p.workspace_id
+                            AND w.type = 'personal'
+                            AND w.owner_user_id = auth.uid()
+                      )
+                      OR EXISTS (
+                          SELECT 1
+                          FROM public.workspaces w
+                          JOIN public.team_members tm ON tm.team_id = w.team_id
+                          WHERE w.id = p.workspace_id
+                            AND w.type = 'team'
+                            AND tm.user_id = auth.uid()
+                            AND tm.role IN ('admin', 'editor')
+                      )
+                  )
+            )
+        )
+    )
     WITH CHECK (
         (
             public.comments.created_by = auth.uid()

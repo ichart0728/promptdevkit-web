@@ -15,7 +15,8 @@ BEGIN
   INTO v_workspace_id
   FROM public.prompts p
   WHERE p.id = NEW.prompt_id
-    AND p.deleted_at IS NULL;
+    AND p.deleted_at IS NULL
+  FOR UPDATE;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Prompt % not found or not accessible.', NEW.prompt_id
@@ -82,7 +83,8 @@ BEGIN
   FROM public.comment_threads ct
   JOIN public.prompts p ON p.id = ct.prompt_id
   WHERE ct.id = NEW.thread_id
-    AND p.deleted_at IS NULL;
+    AND p.deleted_at IS NULL
+  FOR UPDATE OF ct;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Comment thread % not found or not accessible.', NEW.thread_id
