@@ -181,7 +181,7 @@ export type DeleteCommentParams = {
 };
 
 export const deleteComment = async ({
-  promptId: _promptId,
+  promptId,
   threadId,
   commentId,
   userId,
@@ -192,7 +192,8 @@ export const deleteComment = async ({
     .eq('id', commentId)
     .eq('thread_id', threadId)
     .eq('created_by', userId)
-    .select('id')
+    .select('id,comment_threads!inner(prompt_id)')
+    .eq('comment_threads.prompt_id', promptId)
     .single<{ id: string }>();
 
   if (error) {
