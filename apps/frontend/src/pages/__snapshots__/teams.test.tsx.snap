@@ -176,6 +176,65 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
                 </div>
               </li>
             </ul>
+            <div
+              class="space-y-4 rounded-md border p-4"
+            >
+              <div
+                class="space-y-1"
+              >
+                <h3
+                  class="text-sm font-semibold uppercase text-muted-foreground"
+                >
+                  Invite members
+                </h3>
+                <p
+                  class="text-sm text-muted-foreground"
+                >
+                  Add teammates by email. New members join as viewers and can be promoted later.
+                </p>
+              </div>
+              <p
+                class="text-sm text-muted-foreground"
+              >
+                This team is using 2 of 5 member seats.
+              </p>
+              <form
+                class="space-y-4"
+                novalidate=""
+              >
+                <div
+                  class="space-y-2"
+                >
+                  <label
+                    class="text-sm font-medium"
+                    for=":r2:"
+                  >
+                    Email address
+                  </label>
+                  <input
+                    aria-describedby=":r2:-error"
+                    autocomplete="email"
+                    class="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    id=":r2:"
+                    name="email"
+                    placeholder="teammate@example.com"
+                    type="email"
+                  />
+                  <p
+                    class="text-xs text-destructive"
+                    id=":r2:-error"
+                  >
+                    Email is required.
+                  </p>
+                </div>
+                <button
+                  class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full sm:w-auto"
+                  type="submit"
+                >
+                  Send invite
+                </button>
+              </form>
+            </div>
           </section>
           <section
             aria-label="Prompt Builders shared workspaces"

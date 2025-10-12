@@ -7,6 +7,15 @@ import type { Workspace } from '@/domains/workspaces/api/workspaces';
 import { TeamsPage } from './teams';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 
+const fetchPlanLimitsMock = vi.fn(async () => ({
+  members_per_team: {
+    key: 'members_per_team',
+    value_int: 5,
+    value_str: null,
+    value_json: null,
+  },
+}));
+
 const fetchTeamsMock = vi.fn(async () => [] as Team[]);
 const fetchWorkspacesMock = vi.fn(async () => [] as Workspace[]);
 
@@ -27,6 +36,17 @@ vi.mock('@/domains/workspaces/api/workspaces', () => ({
     queryFn: () => fetchWorkspacesMock(),
   }),
   fetchWorkspaces: () => fetchWorkspacesMock(),
+}));
+
+vi.mock('@/domains/prompts/api/planLimits', () => ({
+  planLimitsQueryKey: (planId: string) => ['plan-limits', planId] as const,
+  fetchPlanLimits: (...args: Parameters<typeof fetchPlanLimitsMock>) => fetchPlanLimitsMock(...args),
+}));
+
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    from: vi.fn(),
+  },
 }));
 
 vi.mock('@/domains/auth/hooks/useSessionQuery', () => ({
@@ -67,6 +87,14 @@ describe('TeamsPage', () => {
     vi.clearAllMocks();
     useSessionQueryMock.mockReturnValue(buildSessionQueryValue());
     fetchWorkspacesMock.mockResolvedValue([]);
+    fetchPlanLimitsMock.mockResolvedValue({
+      members_per_team: {
+        key: 'members_per_team',
+        value_int: 5,
+        value_str: null,
+        value_json: null,
+      },
+    });
   });
 
   afterEach(() => {

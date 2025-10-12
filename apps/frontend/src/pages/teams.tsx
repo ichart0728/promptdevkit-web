@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { teamsQueryOptions } from '@/domains/teams/api/teams';
 import { TeamMemberActions } from '@/domains/teams/components/TeamMemberActions';
+import { TeamInviteForm } from '@/domains/teams/components/TeamInviteForm';
 import { workspacesQueryOptions } from '@/domains/workspaces/api/workspaces';
 
 const PLAN_LABELS: Record<string, string> = {
@@ -199,6 +200,9 @@ export const TeamsPage = () => {
                       </li>
                     ))}
                   </ul>
+                  {currentUserRole === 'admin' ? (
+                    <TeamInviteForm team={team} currentUserId={userId} />
+                  ) : null}
                 </section>
                 <section aria-label={`${team.name} shared workspaces`} className="space-y-3">
                   <h3 className="text-sm font-semibold uppercase text-muted-foreground">Shared workspaces</h3>
