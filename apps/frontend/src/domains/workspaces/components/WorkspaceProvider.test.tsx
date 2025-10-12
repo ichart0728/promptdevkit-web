@@ -61,6 +61,7 @@ const buildWorkspace = (id: string, overrides: Partial<Workspace> = {}): Workspa
   name: `Workspace ${id}`,
   type: 'personal',
   teamId: null,
+  archivedAt: null,
   ...overrides,
 });
 

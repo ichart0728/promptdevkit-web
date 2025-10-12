@@ -6,6 +6,12 @@ import { vi } from 'vitest';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { WorkspaceContext } from '@/domains/workspaces/contexts/WorkspaceContext';
 
+const manageDialogMock = vi.fn(() => <div data-testid="manage-workspace-dialog" />);
+
+vi.mock('@/domains/workspaces/components/ManageWorkspaceDialog', () => ({
+  ManageWorkspaceDialog: () => manageDialogMock(),
+}));
+
 type ContextValue = ComponentProps<typeof WorkspaceContext.Provider>['value'];
 
 const baseContext: ContextValue = {
@@ -55,10 +61,16 @@ describe('WorkspaceSwitcher', () => {
     const value: ContextValue = {
       ...baseContext,
       workspaces: [
-        { id: 'workspace-1', name: 'Personal Space', type: 'personal', teamId: null },
-        { id: 'workspace-2', name: 'Team Space', type: 'team', teamId: 'team-1' },
+        { id: 'workspace-1', name: 'Personal Space', type: 'personal', teamId: null, archivedAt: null },
+        { id: 'workspace-2', name: 'Team Space', type: 'team', teamId: 'team-1', archivedAt: null },
       ],
-      activeWorkspace: { id: 'workspace-1', name: 'Personal Space', type: 'personal', teamId: null },
+      activeWorkspace: {
+        id: 'workspace-1',
+        name: 'Personal Space',
+        type: 'personal',
+        teamId: null,
+        archivedAt: null,
+      },
       setActiveWorkspaceId,
     };
 
@@ -67,5 +79,6 @@ describe('WorkspaceSwitcher', () => {
     await user.selectOptions(screen.getByRole('combobox'), 'workspace-2');
 
     expect(setActiveWorkspaceId).toHaveBeenCalledWith('workspace-2');
+    expect(manageDialogMock).toHaveBeenCalled();
   });
 });

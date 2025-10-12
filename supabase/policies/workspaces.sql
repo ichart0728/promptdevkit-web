@@ -19,6 +19,8 @@ CREATE POLICY select_workspaces_for_members
                   AND tm.user_id = auth.uid()
             )
         )
+        )
+        AND public.workspaces.archived_at IS NULL
     );
 
 CREATE POLICY insert_workspaces_for_owners
