@@ -8,7 +8,7 @@ RETURNS TABLE (
     id uuid,
     role public.team_member_role,
     joined_at timestamptz,
-    user jsonb
+    member jsonb
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -77,7 +77,7 @@ BEGIN
             'email', v_invitee.email,
             'name', v_invitee.name,
             'avatar_url', v_invitee.avatar_url
-        );
+        ) AS member;
 END;
 $$;
 
