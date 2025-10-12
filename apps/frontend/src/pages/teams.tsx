@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { teamsQueryOptions } from '@/domains/teams/api/teams';
+import { TeamMemberActions } from '@/domains/teams/components/TeamMemberActions';
 import { workspacesQueryOptions } from '@/domains/workspaces/api/workspaces';
 
 const PLAN_LABELS: Record<string, string> = {
@@ -156,6 +157,8 @@ export const TeamsPage = () => {
         {teams.map((team) => {
           const planLabel = getPlanLabel(team.planId);
           const members = team.members;
+          const currentMembership = members.find((member) => member.user?.id === userId) ?? null;
+          const currentUserRole = currentMembership?.role ?? null;
           const workspaces = teamWorkspaces.get(team.id) ?? [];
 
           return (
@@ -176,16 +179,23 @@ export const TeamsPage = () => {
                   <h3 className="text-sm font-semibold uppercase text-muted-foreground">Members</h3>
                   <ul className="space-y-3">
                     {members.map((member) => (
-                      <li key={member.id} className="flex items-start justify-between gap-3 rounded-md border p-3">
+                      <li
+                        key={member.id}
+                        className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
                         <div>
                           <p className="font-medium">{member.user?.name ?? 'Unknown member'}</p>
                           <p className="text-sm text-muted-foreground">
                             {member.user?.email ?? 'Contact information unavailable'}
                           </p>
                         </div>
-                        <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
-                          {member.role}
-                        </span>
+                        <TeamMemberActions
+                          teamId={team.id}
+                          teamName={team.name}
+                          member={member}
+                          currentUserId={userId}
+                          currentUserRole={currentUserRole}
+                        />
                       </li>
                     ))}
                   </ul>

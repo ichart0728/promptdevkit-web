@@ -128,3 +128,45 @@ export const teamsQueryOptions = (userId: string | null) =>
     },
     staleTime: 60 * 1000,
   });
+
+type UpdateTeamMemberRoleParams = {
+  teamId: string;
+  memberId: string;
+  role: TeamMemberRole;
+};
+
+export const updateTeamMemberRole = async ({
+  teamId,
+  memberId,
+  role,
+}: UpdateTeamMemberRoleParams): Promise<void> => {
+  const { error } = await supabase
+    .from('team_members')
+    .update({ role } as never)
+    .eq('team_id', teamId)
+    .eq('id', memberId);
+
+  if (error) {
+    throw error;
+  }
+};
+
+type RemoveTeamMemberParams = {
+  teamId: string;
+  memberId: string;
+};
+
+export const removeTeamMember = async ({
+  teamId,
+  memberId,
+}: RemoveTeamMemberParams): Promise<void> => {
+  const { error } = await supabase
+    .from('team_members')
+    .delete()
+    .eq('team_id', teamId)
+    .eq('id', memberId);
+
+  if (error) {
+    throw error;
+  }
+};
