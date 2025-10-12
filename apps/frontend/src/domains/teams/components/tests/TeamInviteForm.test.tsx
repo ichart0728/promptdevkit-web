@@ -7,7 +7,7 @@ import { PlanLimitError, type IntegerPlanLimitEvaluation } from '@/lib/limits';
 
 import { TeamInviteForm } from '../TeamInviteForm';
 
-import type { Team } from '../../api/teams';
+import { TeamInviteUserNotFoundError, type Team } from '../../api/teams';
 
 const toastMock = vi.fn();
 
@@ -15,16 +15,29 @@ vi.mock('@/components/common/toast', () => ({
   toast: (...args: Parameters<typeof toastMock>) => toastMock(...args),
 }));
 
-const addTeamMemberMock = vi.fn();
+const inviteTeamMemberMock = vi.fn();
+
+const supabaseRpcMock = vi.fn();
+const supabaseFromMock = vi.fn();
 
 vi.mock('@/domains/teams/api/teams', async () => {
-  const actual = await vi.importActual('@/domains/teams/api/teams');
+  const actual = await vi.importActual<typeof import('../../api/teams')>(
+    '@/domains/teams/api/teams',
+  );
 
   return {
     ...actual,
-    addTeamMember: (...args: Parameters<typeof addTeamMemberMock>) => addTeamMemberMock(...args),
+    inviteTeamMember: (...args: Parameters<typeof inviteTeamMemberMock>) =>
+      inviteTeamMemberMock(...args),
   };
 });
+
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    rpc: (...args: Parameters<typeof supabaseRpcMock>) => supabaseRpcMock(...args),
+    from: (...args: Parameters<typeof supabaseFromMock>) => supabaseFromMock(...args),
+  },
+}));
 
 const fetchPlanLimitsMock = vi.fn();
 
@@ -32,14 +45,6 @@ vi.mock('@/domains/prompts/api/planLimits', () => ({
   fetchPlanLimits: (...args: Parameters<typeof fetchPlanLimitsMock>) =>
     fetchPlanLimitsMock(...args),
   planLimitsQueryKey: (planId: string) => ['plan-limits', planId] as const,
-}));
-
-const supabaseFromMock = vi.fn();
-
-vi.mock('@/lib/supabase', () => ({
-  supabase: {
-    from: (...args: Parameters<typeof supabaseFromMock>) => supabaseFromMock(...args),
-  },
 }));
 
 type TeamOverrides = Partial<Team>;
@@ -101,20 +106,6 @@ const renderInviteForm = (teamOverrides: BuildTeamOptions = {}) => {
   return { queryClient, team, ...renderResult };
 };
 
-const setupUserLookup = (result: {
-  id: string;
-  email: string;
-  name: string | null;
-}) => {
-  const maybeSingleMock = vi.fn().mockResolvedValue({ data: result, error: null });
-  const ilikeMock = vi.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
-  const selectMock = vi.fn().mockReturnValue({ ilike: ilikeMock });
-
-  supabaseFromMock.mockReturnValue({ select: selectMock } as never);
-
-  return { maybeSingleMock, ilikeMock, selectMock };
-};
-
 describe('TeamInviteForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -122,13 +113,7 @@ describe('TeamInviteForm', () => {
   });
 
   it('invites a member successfully and refreshes the team list', async () => {
-    const { maybeSingleMock, ilikeMock, selectMock } = setupUserLookup({
-      id: 'user-2',
-      email: 'new.member@example.com',
-      name: 'New Member',
-    });
-
-    addTeamMemberMock.mockResolvedValue({
+    inviteTeamMemberMock.mockResolvedValue({
       id: 'member-2',
       role: 'viewer',
       joinedAt: '2024-01-02T00:00:00.000Z',
@@ -150,16 +135,12 @@ describe('TeamInviteForm', () => {
     await user.click(screen.getByRole('button', { name: 'Send invite' }));
 
     await waitFor(() => {
-      expect(addTeamMemberMock).toHaveBeenCalledWith({
+      expect(inviteTeamMemberMock).toHaveBeenCalledWith({
         teamId: 'team-1',
-        userId: 'user-2',
+        email: 'new.member@example.com',
         role: 'viewer',
       });
     });
-
-    expect(selectMock).toHaveBeenCalledWith('id,email,name,avatar_url');
-    expect(ilikeMock).toHaveBeenCalledWith('email', 'new.member@example.com');
-    expect(maybeSingleMock).toHaveBeenCalled();
 
     await waitFor(() => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['teams', 'user-1'] });
@@ -172,12 +153,6 @@ describe('TeamInviteForm', () => {
   });
 
   it('surfaces an upgrade prompt when the plan limit is exceeded', async () => {
-    setupUserLookup({
-      id: 'user-3',
-      email: 'full.team@example.com',
-      name: 'Full Team Member',
-    });
-
     const evaluation: IntegerPlanLimitEvaluation = {
       key: 'members_per_team',
       currentUsage: 5,
@@ -189,7 +164,7 @@ describe('TeamInviteForm', () => {
       shouldRecommendUpgrade: true,
     };
 
-    addTeamMemberMock.mockRejectedValue(new PlanLimitError(evaluation));
+    inviteTeamMemberMock.mockRejectedValue(new PlanLimitError(evaluation));
 
     renderInviteForm();
 
@@ -198,7 +173,7 @@ describe('TeamInviteForm', () => {
     await user.click(screen.getByRole('button', { name: 'Send invite' }));
 
     await waitFor(() => {
-      expect(addTeamMemberMock).toHaveBeenCalled();
+      expect(inviteTeamMemberMock).toHaveBeenCalled();
     });
 
     expect(
@@ -221,13 +196,7 @@ describe('TeamInviteForm', () => {
   });
 
   it('shows a general error message when the invitation fails', async () => {
-    setupUserLookup({
-      id: 'user-4',
-      email: 'error.case@example.com',
-      name: 'Error Case',
-    });
-
-    addTeamMemberMock.mockRejectedValue(new Error('Network error'));
+    inviteTeamMemberMock.mockRejectedValue(new Error('Network error'));
 
     renderInviteForm();
 
@@ -237,6 +206,28 @@ describe('TeamInviteForm', () => {
 
     expect(await screen.findByText('Network error')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Upgrade to unlock more capacity' })).not.toBeInTheDocument();
+    expect(toastMock).not.toHaveBeenCalled();
+  });
+
+  it('shows a field error when the invitee email cannot be found', async () => {
+    inviteTeamMemberMock.mockRejectedValue(
+      new TeamInviteUserNotFoundError('missing.user@example.com'),
+    );
+
+    renderInviteForm();
+
+    const user = userEvent.setup();
+    await user.type(
+      await screen.findByLabelText('Email address'),
+      'missing.user@example.com',
+    );
+    await user.click(screen.getByRole('button', { name: 'Send invite' }));
+
+    expect(
+      await screen.findByText(
+        'No user with that email was found. Ask them to sign up first.',
+      ),
+    ).toBeInTheDocument();
     expect(toastMock).not.toHaveBeenCalled();
   });
 });

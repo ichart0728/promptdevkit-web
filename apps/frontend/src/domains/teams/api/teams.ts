@@ -19,6 +19,13 @@ export type TeamMember = {
   } | null;
 };
 
+export class TeamInviteUserNotFoundError extends Error {
+  constructor(public readonly email: string) {
+    super(`No user found with email: ${email}`);
+    this.name = 'TeamInviteUserNotFoundError';
+  }
+}
+
 export type Team = {
   id: string;
   name: string;
@@ -40,6 +47,18 @@ type TeamMemberRow = {
   role: TeamMemberRole;
   joined_at: string;
   user: TeamMemberUserRow | null;
+};
+
+type InviteTeamMemberRow = {
+  id: string;
+  role: TeamMemberRole;
+  joined_at: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+    avatar_url: string | null;
+  } | null;
 };
 
 type TeamOwnerPlanRow = { plan_id: string } | { plan_id: string }[] | null;
@@ -251,6 +270,12 @@ type AddTeamMemberParams = {
   role: TeamMemberRole;
 };
 
+type InviteTeamMemberParams = {
+  teamId: string;
+  email: string;
+  role: TeamMemberRole;
+};
+
 export const addTeamMember = async ({
   teamId,
   userId,
@@ -288,4 +313,53 @@ export const addTeamMember = async ({
   }
 
   return mapMember(data as TeamMemberRow);
+};
+
+const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+export const inviteTeamMember = async ({
+  teamId,
+  email,
+  role,
+}: InviteTeamMemberParams): Promise<TeamMember> => {
+  const normalizedEmail = normalizeEmail(email);
+  const { data, error } = await supabase
+    .rpc('invite_team_member', {
+      p_team_id: teamId,
+      p_invitee_email: normalizedEmail,
+      p_role: role,
+    })
+    .single<InviteTeamMemberRow>();
+
+  if (error) {
+    if ((error as PostgrestError).code === 'P0200') {
+      throw new TeamInviteUserNotFoundError(normalizedEmail);
+    }
+
+    if ((error as PostgrestError).code === PLAN_LIMIT_ERROR_CODE) {
+      throw toPlanLimitError(error as PostgrestError);
+    }
+
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error('Failed to invite team member. No data returned from Supabase.');
+  }
+
+  const user = data.user
+    ? {
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.name ?? data.user.email,
+        avatar_url: data.user.avatar_url,
+      }
+    : null;
+
+  return mapMember({
+    id: data.id,
+    role: data.role,
+    joined_at: data.joined_at,
+    user,
+  });
 };

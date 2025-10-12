@@ -17,9 +17,12 @@ import {
   PlanLimitError,
   type IntegerPlanLimitEvaluation,
 } from '@/lib/limits';
-import { supabase } from '@/lib/supabase';
-
-import { addTeamMember, teamsQueryKey, type Team } from '../api/teams';
+import {
+  inviteTeamMember,
+  TeamInviteUserNotFoundError,
+  teamsQueryKey,
+  type Team,
+} from '../api/teams';
 
 const MEMBERS_PER_TEAM_LIMIT_KEY = 'members_per_team';
 
@@ -37,17 +40,8 @@ const DEFAULT_VALUES: TeamInviteFormValues = {
   email: '',
 };
 
-class TeamInviteUserNotFoundError extends Error {
-  constructor(public readonly email: string) {
-    super(`No user found with email: ${email}`);
-    this.name = 'TeamInviteUserNotFoundError';
-  }
-}
-
 type InviteVariables = {
-  userId: string;
   email: string;
-  displayName: string;
 };
 
 type TeamInviteFormProps = {
@@ -137,35 +131,6 @@ const formatUpgradeMessage = (evaluation: IntegerPlanLimitEvaluation | null) => 
   return `You are using ${evaluation.currentUsage.toLocaleString()} of ${evaluation.limitValue.toLocaleString()} seats. Upgrade to increase the limit.`;
 };
 
-type InviteeRow = {
-  id: string;
-  email: string;
-  name: string | null;
-  avatar_url: string | null;
-};
-
-const findInviteeByEmail = async (email: string) => {
-  const { data, error } = await supabase
-    .from('users')
-    .select('id,email,name,avatar_url')
-    .ilike('email', email)
-    .maybeSingle<InviteeRow>();
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data) {
-    throw new TeamInviteUserNotFoundError(email);
-  }
-
-  return {
-    id: data.id as string,
-    email: data.email as string,
-    name: (data.name as string | null | undefined) ?? null,
-  };
-};
-
 export const TeamInviteForm: React.FC<TeamInviteFormProps> = ({ team, currentUserId }) => {
   const queryClient = useQueryClient();
   const inputId = React.useId();
@@ -251,13 +216,17 @@ export const TeamInviteForm: React.FC<TeamInviteFormProps> = ({ team, currentUse
   const isAtCapacity = Boolean(activeEvaluation && !activeEvaluation.allowed);
 
   const inviteMutation = useMutation({
-    mutationFn: async ({ userId }: InviteVariables) =>
-      addTeamMember({ teamId: team.id, userId, role: 'viewer' }),
-    onSuccess: (_member, variables) => {
+    mutationFn: async ({ email }: InviteVariables) =>
+      inviteTeamMember({ teamId: team.id, email, role: 'viewer' }),
+    onSuccess: (member, variables) => {
       form.reset(DEFAULT_VALUES);
       toast({
         title: 'Member invited',
-        description: `Invitation sent to ${variables.displayName ?? variables.email}.`,
+        description: `Invitation sent to ${
+          member.user?.name?.trim().length
+            ? member.user.name
+            : member.user?.email ?? variables.email
+        }.`,
       });
       void queryClient.invalidateQueries({ queryKey: teamsQueryKey(currentUserId) });
       setUpgradeOpen(false);
@@ -312,34 +281,9 @@ export const TeamInviteForm: React.FC<TeamInviteFormProps> = ({ team, currentUse
       return;
     }
 
-    try {
-      const invitee = await findInviteeByEmail(normalizedEmail);
-
-      inviteMutation.mutate({
-        userId: invitee.id,
-        email: invitee.email,
-        displayName: invitee.name ?? invitee.email,
-      });
-    } catch (error) {
-      if (error instanceof TeamInviteUserNotFoundError) {
-        form.setError('email', {
-          type: 'manual',
-          message: 'No user with that email was found. Ask them to sign up first.',
-        });
-        return;
-      }
-
-      const fallbackMessage =
-        error instanceof Error && error.message.trim().length > 0
-          ? error.message
-          : 'Failed to look up that email address. Please try again.';
-
-      form.setError('root', {
-        type: 'manual',
-        message: fallbackMessage,
-      });
-      console.error(error);
-    }
+    inviteMutation.mutate({
+      email: normalizedEmail,
+    });
   });
 
   const limitMessage = React.useMemo(
