@@ -145,7 +145,15 @@ describe('createComment', () => {
     supabaseFromMock.mockReset();
   });
 
-  it('inserts a comment scoped to the prompt and returns the created row', async () => {
+  it('validates the thread belongs to the prompt before inserting and returns the created row', async () => {
+    const maybeSingleMock = vi.fn().mockResolvedValue({
+      data: { id: 'thread-1', prompt_id: 'prompt-1' },
+      error: null,
+    });
+    const eqPromptThreadMock = vi.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
+    const eqThreadIdMock = vi.fn().mockReturnValue({ eq: eqPromptThreadMock });
+    const selectThreadMock = vi.fn().mockReturnValue({ eq: eqThreadIdMock });
+
     const singleMock = vi.fn().mockResolvedValue({
       data: {
         id: 'comment-2',
@@ -163,9 +171,13 @@ describe('createComment', () => {
     const selectMock = vi.fn().mockReturnValue({ eq: eqMock });
     const insertMock = vi.fn().mockReturnValue({ select: selectMock });
 
-    supabaseFromMock.mockReturnValue({
-      insert: insertMock,
-    } as never);
+    supabaseFromMock
+      .mockReturnValueOnce({
+        select: selectThreadMock,
+      } as never)
+      .mockReturnValueOnce({
+        insert: insertMock,
+      } as never);
 
     const result = await createComment({
       promptId: 'prompt-1',
@@ -175,6 +187,12 @@ describe('createComment', () => {
       mentions: ['user-2'],
     });
 
+    expect(supabaseFromMock).toHaveBeenNthCalledWith(1, 'comment_threads');
+    expect(selectThreadMock).toHaveBeenCalledWith('id,prompt_id');
+    expect(eqThreadIdMock).toHaveBeenCalledWith('id', 'thread-1');
+    expect(eqPromptThreadMock).toHaveBeenCalledWith('prompt_id', 'prompt-1');
+    expect(maybeSingleMock).toHaveBeenCalled();
+    expect(supabaseFromMock).toHaveBeenNthCalledWith(2, 'comments');
     expect(insertMock).toHaveBeenCalledWith([
       {
         thread_id: 'thread-1',
@@ -198,6 +216,33 @@ describe('createComment', () => {
       createdAt: '2025-01-02T00:00:00.000Z',
       updatedAt: '2025-01-02T00:00:00.000Z',
     });
+  });
+
+  it('throws when the thread does not belong to the prompt', async () => {
+    const maybeSingleMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    const eqPromptThreadMock = vi.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
+    const eqThreadIdMock = vi.fn().mockReturnValue({ eq: eqPromptThreadMock });
+    const selectThreadMock = vi.fn().mockReturnValue({ eq: eqThreadIdMock });
+
+    supabaseFromMock.mockReturnValueOnce({
+      select: selectThreadMock,
+    } as never);
+
+    await expect(
+      createComment({
+        promptId: 'prompt-1',
+        threadId: 'thread-2',
+        userId: 'user-1',
+        body: 'New comment',
+      }),
+    ).rejects.toThrow('Comment thread does not belong to the specified prompt.');
+
+    expect(supabaseFromMock).toHaveBeenCalledTimes(1);
+    expect(supabaseFromMock).toHaveBeenCalledWith('comment_threads');
+    expect(selectThreadMock).toHaveBeenCalledWith('id,prompt_id');
+    expect(eqThreadIdMock).toHaveBeenCalledWith('id', 'thread-2');
+    expect(eqPromptThreadMock).toHaveBeenCalledWith('prompt_id', 'prompt-1');
+    expect(maybeSingleMock).toHaveBeenCalled();
   });
 });
 

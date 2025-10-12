@@ -146,6 +146,21 @@ export const createComment = async ({
   body,
   mentions,
 }: CreateCommentParams): Promise<Comment> => {
+  const { data: thread, error: threadLookupError } = await supabase
+    .from('comment_threads')
+    .select('id,prompt_id')
+    .eq('id', threadId)
+    .eq('prompt_id', promptId)
+    .maybeSingle<{ id: string; prompt_id: string }>();
+
+  if (threadLookupError) {
+    throw threadLookupError;
+  }
+
+  if (!thread) {
+    throw new Error('Comment thread does not belong to the specified prompt.');
+  }
+
   const mentionsPayload = mentions ?? [];
 
   const insertPayload = [
