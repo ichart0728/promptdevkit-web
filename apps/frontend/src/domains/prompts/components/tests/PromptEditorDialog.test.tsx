@@ -5,7 +5,12 @@ import { vi } from 'vitest';
 
 import { PromptEditorDialog } from '../PromptEditorDialog';
 import { promptsQueryKey, updatePrompt, type Prompt } from '../../api/prompts';
-import { fetchPromptVersions, promptVersionsQueryKey } from '../../api/promptVersions';
+import {
+  fetchPromptVersions,
+  promptVersionsQueryKey,
+  restorePromptVersion,
+} from '../../api/promptVersions';
+import type * as ToastModule from '@/components/common/toast';
 
 vi.mock('../../api/prompts', () => ({
   updatePrompt: vi.fn(),
@@ -15,10 +20,20 @@ vi.mock('../../api/prompts', () => ({
 vi.mock('../../api/promptVersions', () => ({
   fetchPromptVersions: vi.fn(),
   promptVersionsQueryKey: (promptId: string | null) => ['prompt-versions', promptId] as const,
+  restorePromptVersion: vi.fn(),
+}));
+
+type ToastFn = typeof ToastModule.toast;
+
+const toastMock = vi.fn();
+
+vi.mock('@/components/common/toast', () => ({
+  toast: (...args: Parameters<ToastFn>) => toastMock(...args),
 }));
 
 const updatePromptMock = vi.mocked(updatePrompt);
 const fetchPromptVersionsMock = vi.mocked(fetchPromptVersions);
+const restorePromptVersionMock = vi.mocked(restorePromptVersion);
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -204,6 +219,87 @@ describe('PromptEditorDialog', () => {
     });
 
     consoleErrorSpy.mockRestore();
+  });
+
+  it('restores a prompt version, updates the form, and invalidates caches', async () => {
+    fetchPromptVersionsMock.mockResolvedValue([
+      {
+        id: 'version-2',
+        promptId: 'prompt-1',
+        version: 2,
+        title: 'Weekly summary restored',
+        body: 'Restored body of the prompt.',
+        note: 'Restored note.',
+        tags: ['restored', 'tags'],
+        updatedBy: 'user-2',
+        restoredFromVersion: null,
+        createdAt: '2024-06-02T12:00:00.000Z',
+      },
+    ]);
+
+    const restoredPrompt: Prompt = {
+      ...basePrompt,
+      title: 'Weekly summary restored',
+      body: 'Restored body of the prompt.',
+      tags: ['restored', 'tags'],
+      note: 'Restored note.',
+    };
+
+    restorePromptVersionMock.mockResolvedValue(restoredPrompt);
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const { user, queryClient, invalidateSpy } = renderPromptEditor();
+
+    queryClient.setQueryData(promptsQueryKey(workspace.id), [basePrompt]);
+
+    await user.click(screen.getByRole('button', { name: 'History' }));
+
+    await waitFor(() => {
+      expect(fetchPromptVersionsMock).toHaveBeenCalledWith({ promptId: 'prompt-1' });
+    });
+
+    const restoreButton = await screen.findByRole('button', { name: 'Restore' });
+
+    await user.click(restoreButton);
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Are you sure you want to restore version 2? This will replace the current prompt content.',
+    );
+
+    await waitFor(() => {
+      expect(restorePromptVersionMock).toHaveBeenCalledWith({ promptId: 'prompt-1', version: 2 });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText('Title')).toHaveValue('Weekly summary restored');
+    expect(screen.getByLabelText('Prompt body')).toHaveValue('Restored body of the prompt.');
+    expect(screen.getByLabelText('Tags')).toHaveValue('restored, tags');
+    expect(screen.getByLabelText('Internal note (optional)')).toHaveValue('Restored note.');
+    expect(screen.getByText('Prompt version restored successfully.')).toBeInTheDocument();
+
+    const updatedData = queryClient.getQueryData<Prompt[]>(promptsQueryKey(workspace.id));
+    expect(updatedData).toEqual([restoredPrompt]);
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: promptsQueryKey(workspace.id) });
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: promptVersionsQueryKey(basePrompt.id) });
+    });
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith({
+        title: 'Prompt version restored',
+        description: 'Version 2 has been restored.',
+      });
+    });
+
+    confirmSpy.mockRestore();
   });
 });
 
