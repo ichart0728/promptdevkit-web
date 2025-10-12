@@ -544,3 +544,159 @@ SET
   updated_by = EXCLUDED.updated_by,
   restored_from_version = EXCLUDED.restored_from_version,
   created_at = EXCLUDED.created_at;
+
+-- comment_threads
+WITH comment_thread_seed AS (
+  SELECT * FROM (
+    VALUES
+      (
+        '5f0ea629-9985-4d2a-8b8a-367a54a2cd01'::uuid,
+        'd2fd4052-6693-4aef-9f06-3c39b6f5ad93'::uuid,
+        '22222222-2222-4222-8222-222222222222'::uuid,
+        '2024-01-07 14:30:00+00'::timestamptz
+      ),
+      (
+        '7f90f9a1-13a0-4a6a-8ce4-7a154f4f9bf6'::uuid,
+        '7f237e44-5af1-4a0d-9e6f-451a53a058de'::uuid,
+        '11111111-1111-4111-8111-111111111111'::uuid,
+        '2024-01-07 15:00:00+00'::timestamptz
+      )
+  ) AS t(
+    id,
+    prompt_id,
+    created_by,
+    created_at
+  )
+)
+INSERT INTO public.comment_threads (
+  id,
+  prompt_id,
+  created_by,
+  created_at
+)
+SELECT
+  s.id,
+  s.prompt_id,
+  s.created_by,
+  s.created_at
+FROM comment_thread_seed s
+ON CONFLICT (id) DO UPDATE
+SET
+  prompt_id = EXCLUDED.prompt_id,
+  created_by = EXCLUDED.created_by,
+  created_at = EXCLUDED.created_at;
+
+-- comments
+WITH comment_seed AS (
+  SELECT * FROM (
+    VALUES
+      (
+        '6bb3aa90-4d51-4b6c-a4e3-9196c7ee78bd'::uuid,
+        '5f0ea629-9985-4d2a-8b8a-367a54a2cd01'::uuid,
+        'Thanks for the update, @Demo User! I highlighted the blockers.'::text,
+        ARRAY['11111111-1111-4111-8111-111111111111']::uuid[],
+        '33333333-3333-4333-8333-333333333333'::uuid,
+        '2024-01-07 14:45:00+00'::timestamptz,
+        '2024-01-07 14:45:00+00'::timestamptz,
+        NULL::timestamptz
+      ),
+      (
+        '1d8ef313-1608-4560-9377-2e617a3f4d13'::uuid,
+        '7f90f9a1-13a0-4a6a-8ce4-7a154f4f9bf6'::uuid,
+        'Welcome aboard! Feel free to ask anything here.'::text,
+        ARRAY[]::uuid[],
+        '11111111-1111-4111-8111-111111111111'::uuid,
+        '2024-01-07 15:05:00+00'::timestamptz,
+        '2024-01-07 15:05:00+00'::timestamptz,
+        NULL::timestamptz
+      )
+  ) AS t(
+    id,
+    thread_id,
+    body,
+    mentions,
+    created_by,
+    created_at,
+    updated_at,
+    deleted_at
+  )
+)
+INSERT INTO public.comments (
+  id,
+  thread_id,
+  body,
+  mentions,
+  created_by,
+  created_at,
+  updated_at,
+  deleted_at
+)
+SELECT
+  s.id,
+  s.thread_id,
+  s.body,
+  s.mentions,
+  s.created_by,
+  s.created_at,
+  s.updated_at,
+  s.deleted_at
+FROM comment_seed s
+ON CONFLICT (id) DO UPDATE
+SET
+  thread_id = EXCLUDED.thread_id,
+  body = EXCLUDED.body,
+  mentions = EXCLUDED.mentions,
+  created_by = EXCLUDED.created_by,
+  created_at = EXCLUDED.created_at,
+  updated_at = EXCLUDED.updated_at,
+  deleted_at = EXCLUDED.deleted_at;
+
+-- notifications
+INSERT INTO public.notifications (id, user_id, type, payload, read_at, created_at)
+VALUES
+  (
+    '8a1f7f7c-6b8d-4f17-b4aa-6d6e9f13b101',
+    '11111111-1111-4111-8111-111111111111',
+    'system',
+    jsonb_build_object(
+      'title', 'Welcome to PromptDevKit',
+      'message', 'Get started by exploring your personal workspace.',
+      'action_url', '/dashboard'
+    ),
+    NULL,
+    '2024-01-07 09:00:00+00'
+  ),
+  (
+    'c13ac0a1-5a57-4b2c-a170-5fd2c86d9403',
+    '11111111-1111-4111-8111-111111111111',
+    'mention',
+    jsonb_build_object(
+      'title', 'Team Owner mentioned you',
+      'message', 'Check the latest comment on the Prompt Builders HQ workspace.',
+      'action_url', '/prompts/d2fd4052-6693-4aef-9f06-3c39b6f5ad93?thread=5f0ea629-9985-4d2a-8b8a-367a54a2cd01',
+      'prompt_id', 'd2fd4052-6693-4aef-9f06-3c39b6f5ad93',
+      'thread_id', '5f0ea629-9985-4d2a-8b8a-367a54a2cd01',
+      'comment_id', '6bb3aa90-4d51-4b6c-a4e3-9196c7ee78bd'
+    ),
+    '2024-01-08 11:30:00+00',
+    '2024-01-08 11:00:00+00'
+  ),
+  (
+    'e7b2db68-7813-4769-9323-9fd89a7c25d4',
+    '22222222-2222-4222-8222-222222222222',
+    'system',
+    jsonb_build_object(
+      'title', 'New team member joined',
+      'message', 'Team Member has been added to Prompt Builders.',
+      'action_url', '/teams'
+    ),
+    NULL,
+    '2024-01-09 10:15:00+00'
+  )
+ON CONFLICT (id) DO UPDATE
+SET
+  user_id = EXCLUDED.user_id,
+  type = EXCLUDED.type,
+  payload = EXCLUDED.payload,
+  read_at = EXCLUDED.read_at,
+  created_at = EXCLUDED.created_at;

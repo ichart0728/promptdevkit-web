@@ -6,7 +6,8 @@ VALUES
     'system',
     jsonb_build_object(
       'title', 'Welcome to PromptDevKit',
-      'message', 'Get started by exploring your personal workspace.'
+      'message', 'Get started by exploring your personal workspace.',
+      'action_url', '/dashboard'
     ),
     NULL,
     '2024-01-07 09:00:00+00'
@@ -17,7 +18,11 @@ VALUES
     'mention',
     jsonb_build_object(
       'title', 'Team Owner mentioned you',
-      'message', 'Check the latest comment on the Prompt Builders HQ workspace.'
+      'message', 'Check the latest comment on the Prompt Builders HQ workspace.',
+      'action_url', '/prompts/d2fd4052-6693-4aef-9f06-3c39b6f5ad93?thread=5f0ea629-9985-4d2a-8b8a-367a54a2cd01',
+      'prompt_id', 'd2fd4052-6693-4aef-9f06-3c39b6f5ad93',
+      'thread_id', '5f0ea629-9985-4d2a-8b8a-367a54a2cd01',
+      'comment_id', '6bb3aa90-4d51-4b6c-a4e3-9196c7ee78bd'
     ),
     '2024-01-08 11:30:00+00',
     '2024-01-08 11:00:00+00'
@@ -28,7 +33,8 @@ VALUES
     'system',
     jsonb_build_object(
       'title', 'New team member joined',
-      'message', 'Team Member has been added to Prompt Builders.'
+      'message', 'Team Member has been added to Prompt Builders.',
+      'action_url', '/teams'
     ),
     NULL,
     '2024-01-09 10:15:00+00'
