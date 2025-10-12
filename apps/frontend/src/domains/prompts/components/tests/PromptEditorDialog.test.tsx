@@ -10,6 +10,17 @@ import {
   promptVersionsQueryKey,
   restorePromptVersion,
 } from '../../api/promptVersions';
+import {
+  commentThreadCommentsQueryKey,
+  createComment,
+  deleteComment,
+  fetchPromptCommentThreads,
+  fetchThreadComments,
+  promptCommentsQueryKey,
+  type Comment,
+  type CommentThread,
+} from '../../api/promptComments';
+import { PlanLimitError } from '@/lib/limits';
 import type * as ToastModule from '@/components/common/toast';
 
 vi.mock('../../api/prompts', () => ({
@@ -23,6 +34,23 @@ vi.mock('../../api/promptVersions', () => ({
   restorePromptVersion: vi.fn(),
 }));
 
+vi.mock('../../api/promptComments', () => ({
+  fetchPromptCommentThreads: vi.fn(),
+  fetchThreadComments: vi.fn(),
+  createComment: vi.fn(),
+  deleteComment: vi.fn(),
+  promptCommentsQueryKey: (promptId: string | null) => ['prompt-comments', promptId] as const,
+  commentThreadsQueryKey: (
+    promptId: string | null,
+    pagination: { offset: number; limit: number },
+  ) => ['prompt-comments', promptId, 'threads', pagination] as const,
+  commentThreadCommentsQueryKey: (
+    promptId: string | null,
+    threadId: string | null,
+    pagination: { offset: number; limit: number },
+  ) => ['prompt-comments', promptId, 'threads', threadId, 'comments', pagination] as const,
+}));
+
 type ToastFn = typeof ToastModule.toast;
 
 const toastMock = vi.fn();
@@ -34,6 +62,10 @@ vi.mock('@/components/common/toast', () => ({
 const updatePromptMock = vi.mocked(updatePrompt);
 const fetchPromptVersionsMock = vi.mocked(fetchPromptVersions);
 const restorePromptVersionMock = vi.mocked(restorePromptVersion);
+const fetchPromptCommentThreadsMock = vi.mocked(fetchPromptCommentThreads);
+const fetchThreadCommentsMock = vi.mocked(fetchThreadComments);
+const createCommentMock = vi.mocked(createComment);
+const deleteCommentMock = vi.mocked(deleteComment);
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -171,7 +203,7 @@ describe('PromptEditorDialog', () => {
 
     const { user } = renderPromptEditor();
 
-    await user.click(screen.getByRole('button', { name: 'History' }));
+    await user.click(screen.getByRole('tab', { name: 'History' }));
 
     await waitFor(() => {
       expect(fetchPromptVersionsMock).toHaveBeenCalledWith({ promptId: 'prompt-1' });
@@ -191,7 +223,7 @@ describe('PromptEditorDialog', () => {
 
     const { user } = renderPromptEditor();
 
-    await user.click(screen.getByRole('button', { name: 'History' }));
+    await user.click(screen.getByRole('tab', { name: 'History' }));
 
     expect(await screen.findByText('Loading version history…')).toBeInTheDocument();
   });
@@ -202,7 +234,7 @@ describe('PromptEditorDialog', () => {
 
     const { user } = renderPromptEditor();
 
-    await user.click(screen.getByRole('button', { name: 'History' }));
+    await user.click(screen.getByRole('tab', { name: 'History' }));
 
     await waitFor(() => {
       expect(screen.getByText('Failed to load version history. Please try again.')).toBeInTheDocument();
@@ -253,7 +285,7 @@ describe('PromptEditorDialog', () => {
 
     queryClient.setQueryData(promptsQueryKey(workspace.id), [basePrompt]);
 
-    await user.click(screen.getByRole('button', { name: 'History' }));
+    await user.click(screen.getByRole('tab', { name: 'History' }));
 
     await waitFor(() => {
       expect(fetchPromptVersionsMock).toHaveBeenCalledWith({ promptId: 'prompt-1' });
@@ -300,6 +332,263 @@ describe('PromptEditorDialog', () => {
     });
 
     confirmSpy.mockRestore();
+  });
+
+  it('loads discussions when switching to the discussion tab', async () => {
+    const threads: CommentThread[] = [
+      {
+        id: 'thread-1',
+        promptId: 'prompt-1',
+        createdBy: 'user-2',
+        createdAt: '2024-06-01T12:00:00.000Z',
+      },
+    ];
+    const comments: Comment[] = [
+      {
+        id: 'comment-1',
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        body: 'Great prompt!',
+        mentions: [],
+        createdBy: 'user-3',
+        createdAt: '2024-06-01T12:05:00.000Z',
+        updatedAt: '2024-06-01T12:05:00.000Z',
+      },
+    ];
+
+    fetchPromptCommentThreadsMock.mockResolvedValue(threads);
+    fetchThreadCommentsMock.mockResolvedValue(comments);
+
+    const { user } = renderPromptEditor();
+
+    await user.click(screen.getByRole('tab', { name: 'Discussion' }));
+
+    await waitFor(() => {
+      expect(fetchPromptCommentThreadsMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        offset: 0,
+        limit: 20,
+      });
+    });
+
+    await waitFor(() => {
+      expect(fetchThreadCommentsMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        offset: 0,
+        limit: 50,
+      });
+    });
+
+    expect(await screen.findByText('Great prompt!')).toBeInTheDocument();
+  });
+
+  it('posts a comment with optimistic updates and invalidates caches', async () => {
+    const threads: CommentThread[] = [
+      {
+        id: 'thread-1',
+        promptId: 'prompt-1',
+        createdBy: 'user-2',
+        createdAt: '2024-06-01T12:00:00.000Z',
+      },
+    ];
+    const comments: Comment[] = [
+      {
+        id: 'comment-1',
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        body: 'Initial comment',
+        mentions: [],
+        createdBy: 'user-2',
+        createdAt: '2024-06-01T12:05:00.000Z',
+        updatedAt: '2024-06-01T12:05:00.000Z',
+      },
+    ];
+    const newComment: Comment = {
+      id: 'comment-2',
+      promptId: 'prompt-1',
+      threadId: 'thread-1',
+      body: 'Nice work!',
+      mentions: [],
+      createdBy: 'user-1',
+      createdAt: '2024-06-01T12:06:00.000Z',
+      updatedAt: '2024-06-01T12:06:00.000Z',
+    };
+
+    fetchPromptCommentThreadsMock.mockResolvedValue(threads);
+    fetchThreadCommentsMock
+      .mockResolvedValueOnce(comments)
+      .mockResolvedValueOnce([...comments, newComment])
+      .mockResolvedValue([...comments, newComment]);
+    createCommentMock.mockResolvedValue(newComment);
+
+    const { user, invalidateSpy, queryClient } = renderPromptEditor();
+
+    const commentsQueryKey = commentThreadCommentsQueryKey('prompt-1', 'thread-1', {
+      offset: 0,
+      limit: 50,
+    });
+
+    await user.click(screen.getByRole('tab', { name: 'Discussion' }));
+
+    await screen.findByText('Initial comment');
+
+    const commentField = await screen.findByRole('textbox', { name: 'Add a comment' });
+
+    await user.type(commentField, 'Nice work!');
+    await user.click(screen.getByRole('button', { name: 'Post comment' }));
+
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        userId: 'user-1',
+        body: 'Nice work!',
+      });
+    });
+
+    await waitFor(() => {
+      const storedComments = queryClient.getQueryData<Comment[]>(commentsQueryKey) ?? [];
+      expect(storedComments.some((comment) => comment.body === 'Nice work!')).toBe(true);
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: promptCommentsQueryKey('prompt-1') });
+    });
+  });
+
+  it('deletes a comment and invalidates caches', async () => {
+    const threads: CommentThread[] = [
+      {
+        id: 'thread-1',
+        promptId: 'prompt-1',
+        createdBy: 'user-2',
+        createdAt: '2024-06-01T12:00:00.000Z',
+      },
+    ];
+    const comments: Comment[] = [
+      {
+        id: 'comment-1',
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        body: 'To be deleted',
+        mentions: [],
+        createdBy: 'user-1',
+        createdAt: '2024-06-01T12:05:00.000Z',
+        updatedAt: '2024-06-01T12:05:00.000Z',
+      },
+    ];
+
+    fetchPromptCommentThreadsMock.mockResolvedValue(threads);
+    fetchThreadCommentsMock
+      .mockResolvedValueOnce(comments)
+      .mockResolvedValue([]);
+    deleteCommentMock.mockResolvedValue('comment-1');
+
+    const { user, invalidateSpy, queryClient } = renderPromptEditor();
+
+    const commentsQueryKey = commentThreadCommentsQueryKey('prompt-1', 'thread-1', {
+      offset: 0,
+      limit: 50,
+    });
+
+    await user.click(screen.getByRole('tab', { name: 'Discussion' }));
+
+    await screen.findByText('To be deleted');
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(deleteCommentMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        commentId: 'comment-1',
+        userId: 'user-1',
+      });
+    });
+
+    await waitFor(() => {
+      const storedComments = queryClient.getQueryData<Comment[]>(commentsQueryKey) ?? [];
+      expect(storedComments.some((comment) => comment.id === 'comment-1')).toBe(false);
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: promptCommentsQueryKey('prompt-1') });
+    });
+  });
+
+  it('shows an error when discussions fail to load and retries the query', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    fetchPromptCommentThreadsMock.mockRejectedValueOnce(new Error('Network error'));
+
+    const { user } = renderPromptEditor();
+
+    await user.click(screen.getByRole('tab', { name: 'Discussion' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Failed to load discussions. Please try again.'),
+      ).toBeInTheDocument();
+    });
+
+    fetchPromptCommentThreadsMock.mockResolvedValueOnce([]);
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => {
+      expect(fetchPromptCommentThreadsMock).toHaveBeenCalledTimes(2);
+    });
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('surfaces plan limit errors when posting comments', async () => {
+    const threads: CommentThread[] = [
+      {
+        id: 'thread-1',
+        promptId: 'prompt-1',
+        createdBy: 'user-2',
+        createdAt: '2024-06-01T12:00:00.000Z',
+      },
+    ];
+    const comments: Comment[] = [];
+
+    fetchPromptCommentThreadsMock.mockResolvedValue(threads);
+    fetchThreadCommentsMock.mockResolvedValue(comments);
+
+    const evaluation = {
+      key: 'prompt-comments',
+      currentUsage: 10,
+      delta: 1,
+      nextUsage: 11,
+      limitValue: 10,
+      status: 'limit-exceeded' as const,
+      allowed: false,
+      shouldRecommendUpgrade: true,
+    };
+
+    createCommentMock.mockRejectedValue(new PlanLimitError(evaluation));
+
+    const { user } = renderPromptEditor();
+
+    await user.click(screen.getByRole('tab', { name: 'Discussion' }));
+
+    const commentField = await screen.findByRole('textbox', { name: 'Add a comment' });
+
+    await user.type(commentField, 'This will fail');
+    await user.click(screen.getByRole('button', { name: 'Post comment' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('You have reached the limit of 10 comments for your plan.'),
+      ).toBeInTheDocument();
+    });
+
+    expect(toastMock).toHaveBeenCalledWith({
+      title: 'Plan limit reached',
+      description: 'You have reached the limit of 10 comments for your plan.',
+    });
   });
 });
 

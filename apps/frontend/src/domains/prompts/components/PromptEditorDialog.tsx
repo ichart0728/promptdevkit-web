@@ -23,6 +23,7 @@ import {
   restorePromptVersion,
 } from '../api/promptVersions';
 import type { Workspace } from '@/domains/workspaces/api/workspaces';
+import { PromptCommentsPanel } from './PromptCommentsPanel';
 
 const promptEditorSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -64,7 +65,7 @@ export const PromptEditorDialog = ({
   onOpenChange,
 }: PromptEditorDialogProps) => {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = React.useState<'edit' | 'history'>('edit');
+  const [activeTab, setActiveTab] = React.useState<'edit' | 'history' | 'discussion'>('edit');
   const [serverError, setServerError] = React.useState<string | null>(null);
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
@@ -338,6 +339,17 @@ export const PromptEditorDialog = ({
     );
   };
 
+  const tabs: Array<{ id: 'edit' | 'history' | 'discussion'; label: string }> = [
+    { id: 'edit', label: 'Edit' },
+    { id: 'history', label: 'History' },
+    { id: 'discussion', label: 'Discussion' },
+  ];
+
+  const tabButtonClass = (tabId: typeof tabs[number]['id']) =>
+    `rounded-md px-3 py-1 font-medium ${
+      activeTab === tabId ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+    }`;
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent>
@@ -346,28 +358,30 @@ export const PromptEditorDialog = ({
           <DialogDescription>Update the prompt details or browse previous versions.</DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-3 border-b pb-3 text-sm">
-          <button
-            type="button"
-            className={`rounded-md px-3 py-1 font-medium ${
-              activeTab === 'edit' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-            }`}
-            onClick={() => setActiveTab('edit')}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className={`rounded-md px-3 py-1 font-medium ${
-              activeTab === 'history' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
-            }`}
-            onClick={() => setActiveTab('history')}
-          >
-            History
-          </button>
+        <div className="flex gap-3 border-b pb-3 text-sm" role="tablist" aria-label="Prompt editor tabs">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`prompt-editor-tab-${tab.id}`}
+              aria-selected={activeTab === tab.id}
+              aria-controls={`prompt-editor-panel-${tab.id}`}
+              tabIndex={activeTab === tab.id ? 0 : -1}
+              className={tabButtonClass(tab.id)}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {activeTab === 'edit' ? (
+        <div
+          id="prompt-editor-panel-edit"
+          role="tabpanel"
+          aria-labelledby="prompt-editor-tab-edit"
+          hidden={activeTab !== 'edit'}
+        >
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="prompt-editor-title">
@@ -423,14 +437,31 @@ export const PromptEditorDialog = ({
               </Button>
             </DialogFooter>
           </form>
-        ) : (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Each update generates a version so you can audit who made changes and when.
-            </p>
-            {renderHistory()}
-          </div>
-        )}
+        </div>
+
+        <div
+          id="prompt-editor-panel-history"
+          role="tabpanel"
+          aria-labelledby="prompt-editor-tab-history"
+          hidden={activeTab !== 'history'}
+          className="space-y-4"
+        >
+          <p className="text-sm text-muted-foreground">
+            Each update generates a version so you can audit who made changes and when.
+          </p>
+          {renderHistory()}
+        </div>
+
+        <div
+          id="prompt-editor-panel-discussion"
+          role="tabpanel"
+          aria-labelledby="prompt-editor-tab-discussion"
+          hidden={activeTab !== 'discussion'}
+        >
+          {activeTab === 'discussion' ? (
+            <PromptCommentsPanel promptId={promptId} userId={userId} />
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
