@@ -61,17 +61,6 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
         : null;
 
       if (currentWorkspace) {
-        if (!currentWorkspace.archivedAt) {
-          return currentWorkspace.id;
-        }
-
-        const nextActiveWorkspace = workspaces[0];
-
-        if (nextActiveWorkspace) {
-          pendingActiveWorkspaceIdRef.current = null;
-          return nextActiveWorkspace.id;
-        }
-
         return currentWorkspace.id;
       }
 
@@ -97,7 +86,7 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
           return currentId;
         }
 
-        const exists = workspaces.some((workspace) => workspace.id === workspaceId);
+        const exists = allWorkspaces.some((workspace) => workspace.id === workspaceId);
 
         if (exists) {
           pendingActiveWorkspaceIdRef.current = null;
@@ -107,7 +96,7 @@ export const WorkspaceProvider = ({ children }: { children: React.ReactNode }) =
         return currentId;
       });
     },
-    [workspaces],
+    [allWorkspaces],
   );
 
   const activeWorkspace = React.useMemo(

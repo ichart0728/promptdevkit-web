@@ -200,7 +200,7 @@ describe('WorkspaceProvider', () => {
     });
   });
 
-  it('switches to another active workspace when the current one becomes archived', async () => {
+  it('keeps an archived workspace active when other active workspaces exist', async () => {
     fetchWorkspacesMock.mockResolvedValue([
       buildWorkspace('workspace-1'),
       buildWorkspace('workspace-2'),
@@ -223,7 +223,7 @@ describe('WorkspaceProvider', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-2');
+      expect(screen.getByTestId('active-workspace')).toHaveTextContent('workspace-1');
       expect(screen.getByTestId('workspace-count')).toHaveTextContent('1');
     });
   });
