@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter } from '@tanstack/react-rout
 
 import { RootLayout } from '@/pages/_layout';
 import { DashboardPage } from '@/pages/dashboard';
+import { NotificationsPage } from '@/pages/notifications';
 import { PromptsPage } from '@/pages/prompts';
 import { TeamsPage } from '@/pages/teams';
 
@@ -27,7 +28,13 @@ const teamsRoute = createRoute({
   component: TeamsPage,
 });
 
-const routeTree = rootRoute.addChildren([dashboardRoute, promptsRoute, teamsRoute]);
+const notificationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/notifications',
+  component: NotificationsPage,
+});
+
+const routeTree = rootRoute.addChildren([dashboardRoute, promptsRoute, teamsRoute, notificationsRoute]);
 
 export const router = createRouter({
   routeTree,
