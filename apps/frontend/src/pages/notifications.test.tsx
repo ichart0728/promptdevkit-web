@@ -7,6 +7,7 @@ import type { NotificationItem } from '@/domains/notifications/types';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
+import { router } from '@/app/router';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -27,6 +28,7 @@ vi.mock('@/lib/supabase', () => ({
 vi.mock('@/domains/auth/hooks/useSessionQuery');
 vi.mock('@/domains/notifications/hooks/useNotificationsQuery');
 vi.mock('@/domains/notifications/hooks/useNotificationReadMutation');
+vi.mock('@/components/common/toast', () => ({ toast: vi.fn() }));
 
 import { NotificationsPage } from './notifications';
 
@@ -147,6 +149,9 @@ describe('NotificationsPage', () => {
     } as unknown as ReturnType<typeof useSessionQuery>);
     mockedUseNotificationsQuery.mockReturnValue(createQueryResult());
     mockedUseNotificationReadMutation.mockReturnValue(createMutationResult());
+    vi.spyOn(router, 'navigate').mockResolvedValue(
+      undefined as Awaited<ReturnType<typeof router.navigate>>,
+    );
   });
 
   it('renders a loading state while the session is fetching', () => {
@@ -215,5 +220,47 @@ describe('NotificationsPage', () => {
     const { asFragment } = renderNotificationsPage();
 
     expect(asFragment()).toMatchSnapshot();
+  });
+
+  it('navigates to the prompt when clicking the mention CTA', async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn();
+
+    mockedUseNotificationsQuery.mockReturnValue(
+      createQueryResult({
+        data: {
+          pages: [
+            [
+              createNotification({
+                id: 'mention-2',
+                type: 'mention',
+                payload: {
+                  title: 'Mentioned in prompt',
+                  message: 'Join the discussion',
+                  prompt_id: 'prompt-7',
+                  thread_id: 'thread-3',
+                } as NotificationItem['payload'],
+              }),
+            ],
+          ],
+          pageParams: [0],
+        },
+      }),
+    );
+    mockedUseNotificationReadMutation.mockReturnValue(createMutationResult({ mutate }));
+
+    renderNotificationsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Go to discussion' }));
+
+    expect(router.navigate).toHaveBeenCalledWith({
+      to: '/prompts',
+      search: { promptId: 'prompt-7', threadId: 'thread-3' },
+    });
+    expect(mutate).toHaveBeenCalledWith({ id: 'mention-2', read: true });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 });

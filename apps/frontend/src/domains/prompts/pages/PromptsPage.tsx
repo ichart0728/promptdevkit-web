@@ -79,6 +79,13 @@ type PromptFavoritesMap = Record<string, boolean>;
 
 const EMPTY_FAVORITES_MAP: PromptFavoritesMap = {};
 
+type PromptsSearchParams = {
+  q?: string;
+  tags?: string[] | string;
+  promptId?: string;
+  threadId?: string;
+};
+
 type OptimisticContext = {
   previousPrompts: PromptListItemData[];
   optimisticId: string;
@@ -235,7 +242,7 @@ export const PromptsPage = () => {
   const sessionQuery = useSessionQuery();
   const activeWorkspace = useActiveWorkspace();
   const navigate = useNavigate({ from: '/prompts' });
-  const searchParams = useSearch({ from: '/prompts' }) as { q?: string; tags?: string[] | string };
+  const searchParams = useSearch({ from: '/prompts' }) as PromptsSearchParams;
   const [simulateError, setSimulateError] = React.useState(false);
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
@@ -243,6 +250,8 @@ export const PromptsPage = () => {
   const [promptPendingDeletion, setPromptPendingDeletion] = React.useState<PromptListItemData | null>(null);
   const [promptBeingEdited, setPromptBeingEdited] = React.useState<PromptListItemData | null>(null);
   const [editorOpen, setEditorOpen] = React.useState(false);
+  const [editorInitialTab, setEditorInitialTab] = React.useState<'edit' | 'history' | 'discussion'>('edit');
+  const [editorInitialThreadId, setEditorInitialThreadId] = React.useState<string | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
 
   const workspaceId = activeWorkspace?.id ?? null;
@@ -258,6 +267,7 @@ export const PromptsPage = () => {
     () => promptFavoritesQueryKey(workspaceId && userId ? `${workspaceId}:${userId}` : null),
     [workspaceId, userId],
   );
+  const mentionNavigationHandledRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     setShowFavoritesOnly(false);
@@ -505,6 +515,8 @@ export const PromptsPage = () => {
 
     setUpgradeOpen(false);
     setLastEvaluation(null);
+    setEditorInitialTab('edit');
+    setEditorInitialThreadId(null);
     setPromptBeingEdited(prompt);
     setEditorOpen(true);
   };
@@ -512,6 +524,8 @@ export const PromptsPage = () => {
   const handleEditorOpenChange = (open: boolean) => {
     if (!open) {
       setPromptBeingEdited(null);
+      setEditorInitialTab('edit');
+      setEditorInitialThreadId(null);
     }
 
     setEditorOpen(open);
@@ -569,6 +583,14 @@ export const PromptsPage = () => {
 
   const rawSearchQuery = typeof searchParams?.q === 'string' ? searchParams.q : '';
   const rawSearchTags = searchParams?.tags;
+  const mentionPromptId =
+    typeof searchParams?.promptId === 'string' && searchParams.promptId.trim().length > 0
+      ? searchParams.promptId
+      : null;
+  const mentionThreadId =
+    typeof searchParams?.threadId === 'string' && searchParams.threadId.trim().length > 0
+      ? searchParams.threadId
+      : null;
   const searchTags = React.useMemo(() => {
     if (Array.isArray(rawSearchTags)) {
       return rawSearchTags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0);
@@ -681,6 +703,59 @@ export const PromptsPage = () => {
   const hasActiveFilters = hasSearchQuery || hasTagFilters;
   const currentUsage = prompts.length;
 
+  React.useEffect(() => {
+    if (!mentionPromptId) {
+      mentionNavigationHandledRef.current = null;
+      return;
+    }
+
+    const signature = `${mentionPromptId}:${mentionThreadId ?? ''}`;
+
+    if (mentionNavigationHandledRef.current === signature) {
+      return;
+    }
+
+    if (!activeWorkspace || !workspaceId || !userId) {
+      return;
+    }
+
+    if (!prompts.length) {
+      return;
+    }
+
+    const targetPrompt = prompts.find((prompt) => prompt.id === mentionPromptId);
+
+    if (!targetPrompt) {
+      return;
+    }
+
+    setUpgradeOpen(false);
+    setLastEvaluation(null);
+    setEditorInitialTab('discussion');
+    setEditorInitialThreadId(mentionThreadId ?? null);
+    setPromptBeingEdited(targetPrompt);
+    setEditorOpen(true);
+    mentionNavigationHandledRef.current = signature;
+
+    void navigate({
+      to: '.',
+      search: (previous) => ({
+        ...previous,
+        promptId: undefined,
+        threadId: undefined,
+      }),
+      replace: true,
+    });
+  }, [
+    activeWorkspace,
+    mentionPromptId,
+    mentionThreadId,
+    navigate,
+    prompts,
+    userId,
+    workspaceId,
+  ]);
+
   const handleUpgradeDialogChange = (open: boolean) => {
     setUpgradeOpen(open);
     if (!open) {
@@ -689,13 +764,15 @@ export const PromptsPage = () => {
   };
 
   const handleFiltersSubmit = filtersForm.handleSubmit((values) => {
-    const parsedFilters = promptFiltersSubmitSchema.parse(values);
+    const parsedFilters: PromptFiltersSubmitValues = promptFiltersSubmitSchema.parse(values);
     void navigate({
       to: '.',
       search: (previous) => ({
         ...previous,
         q: parsedFilters.q.length > 0 ? parsedFilters.q : undefined,
         tags: parsedFilters.tags.length > 0 ? parsedFilters.tags : undefined,
+        promptId: undefined,
+        threadId: undefined,
       }),
       replace: true,
     });
@@ -709,6 +786,8 @@ export const PromptsPage = () => {
         ...previous,
         q: undefined,
         tags: undefined,
+        promptId: undefined,
+        threadId: undefined,
       }),
       replace: true,
     });
@@ -936,6 +1015,8 @@ export const PromptsPage = () => {
       setUpgradeOpen(false);
       setPromptBeingEdited(null);
       setEditorOpen(false);
+      setEditorInitialTab('edit');
+      setEditorInitialThreadId(null);
     }
 
     lastWorkspaceIdRef.current = workspaceId;
@@ -1208,6 +1289,8 @@ export const PromptsPage = () => {
         prompt={promptBeingEdited}
         workspace={activeWorkspace ?? null}
         userId={userId}
+        initialTab={editorInitialTab}
+        initialThreadId={editorInitialThreadId}
       />
 
       <Dialog open={!!promptPendingDeletion} onOpenChange={handleDeleteDialogOpenChange}>

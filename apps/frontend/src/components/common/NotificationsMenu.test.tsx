@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { NotificationsMenu } from './NotificationsMenu';
 import type { NotificationItem } from '@/domains/notifications/types';
+import { router } from '@/app/router';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
 
@@ -21,6 +22,7 @@ vi.mock('@/lib/supabase', () => ({
 
 vi.mock('@/domains/notifications/hooks/useNotificationsQuery');
 vi.mock('@/domains/notifications/hooks/useNotificationReadMutation');
+vi.mock('@/components/common/toast', () => ({ toast: vi.fn() }));
 
 const mockedUseNotificationsQuery = vi.mocked(useNotificationsQuery);
 const mockedUseNotificationReadMutation = vi.mocked(useNotificationReadMutation);
@@ -69,6 +71,13 @@ describe('NotificationsMenu', () => {
     vi.clearAllMocks();
     mockedUseNotificationsQuery.mockReturnValue(createQueryResult());
     mockedUseNotificationReadMutation.mockReturnValue(createMutationResult());
+    vi.spyOn(router, 'navigate').mockResolvedValue(
+      undefined as Awaited<ReturnType<typeof router.navigate>>,
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('renders a notifications button without a badge when there are no unread notifications', () => {
@@ -140,6 +149,47 @@ describe('NotificationsMenu', () => {
 
     await user.click(screen.getByRole('button', { name: '1 unread notifications' }));
 
-    expect(screen.getByRole('link', { name: 'View all' })).toHaveAttribute('href', '/notifications');
+    await user.click(screen.getByRole('button', { name: 'View all' }));
+
+    expect(router.navigate).toHaveBeenCalledWith({ to: '/notifications' });
+  });
+
+  it('navigates to a prompt when clicking the mention CTA', async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn();
+
+    mockedUseNotificationsQuery.mockReturnValue(
+      createQueryResult({
+        data: {
+          pages: [
+            [
+              createNotification({
+                id: 'mention-1',
+                type: 'mention',
+                payload: {
+                  title: 'New mention',
+                  message: 'You were mentioned',
+                  prompt_id: 'prompt-42',
+                  thread_id: 'thread-9',
+                } as NotificationItem['payload'],
+              }),
+            ],
+          ],
+          pageParams: [0],
+        },
+      }),
+    );
+    mockedUseNotificationReadMutation.mockReturnValue(createMutationResult({ mutate }));
+
+    renderMenu();
+
+    await user.click(screen.getByRole('button', { name: '1 unread notifications' }));
+    await user.click(screen.getByRole('button', { name: 'Go to discussion' }));
+
+    expect(router.navigate).toHaveBeenCalledWith({
+      to: '/prompts',
+      search: { promptId: 'prompt-42', threadId: 'thread-9' },
+    });
+    expect(mutate).toHaveBeenCalledWith({ id: 'mention-1', read: true });
   });
 });
