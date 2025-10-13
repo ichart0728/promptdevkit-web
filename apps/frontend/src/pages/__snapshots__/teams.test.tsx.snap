@@ -47,6 +47,33 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
           </span>
         </header>
         <div
+          class="border-b px-6 py-4"
+        >
+          <div
+            class="space-y-2 rounded-md border p-4 text-sm border-muted bg-muted/20 text-muted-foreground"
+            data-seat-status="loading"
+            data-testid="team-plan-usage-banner"
+          >
+            <div
+              class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <p
+                class="font-medium"
+              >
+                Checking seats…
+              </p>
+              <p
+                class="text-xs uppercase tracking-wide text-muted-foreground/80"
+              >
+                Plan: Pro
+              </p>
+            </div>
+            <p>
+              Checking plan capacity…
+            </p>
+          </div>
+        </div>
+        <div
           class="grid gap-6 px-6 py-5 md:grid-cols-2"
         >
           <section
@@ -84,14 +111,14 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
                   >
                     <label
                       class="sr-only"
-                      for=":r0:"
+                      for=":r3:"
                     >
                       Role
                     </label>
                     <select
                       aria-label="Role"
                       class="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                      id=":r0:"
+                      id=":r3:"
                     >
                       <option
                         disabled=""
@@ -142,14 +169,14 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
                   >
                     <label
                       class="sr-only"
-                      for=":r1:"
+                      for=":r4:"
                     >
                       Role
                     </label>
                     <select
                       aria-label="Role"
                       class="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                      id=":r1:"
+                      id=":r4:"
                     >
                       <option
                         value="viewer"
@@ -196,7 +223,7 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
               <p
                 class="text-sm text-muted-foreground"
               >
-                This team is using 2 of 5 member seats.
+                Checking plan capacity…
               </p>
               <form
                 class="space-y-4"
@@ -207,25 +234,18 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
                 >
                   <label
                     class="text-sm font-medium"
-                    for=":r2:"
+                    for=":r5:"
                   >
                     Email address
                   </label>
                   <input
-                    aria-describedby=":r2:-error"
                     autocomplete="email"
                     class="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    id=":r2:"
+                    id=":r5:"
                     name="email"
                     placeholder="teammate@example.com"
                     type="email"
                   />
-                  <p
-                    class="text-xs text-destructive"
-                    id=":r2:-error"
-                  >
-                    Email is required.
-                  </p>
                 </div>
                 <button
                   class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full sm:w-auto"
