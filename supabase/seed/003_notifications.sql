@@ -19,7 +19,7 @@ VALUES
     jsonb_build_object(
       'title', 'Team Owner mentioned you',
       'message', 'Check the latest comment on the Prompt Builders HQ workspace.',
-      'action_url', '/prompts/d2fd4052-6693-4aef-9f06-3c39b6f5ad93?thread=5f0ea629-9985-4d2a-8b8a-367a54a2cd01',
+      'action_url', '/prompts/d2fd4052-6693-4aef-9f06-3c39b6f5ad93?thread=5f0ea629-9985-4d2a-8b8a-367a54a2cd01&comment=6bb3aa90-4d51-4b6c-a4e3-9196c7ee78bd',
       'prompt_id', 'd2fd4052-6693-4aef-9f06-3c39b6f5ad93',
       'thread_id', '5f0ea629-9985-4d2a-8b8a-367a54a2cd01',
       'comment_id', '6bb3aa90-4d51-4b6c-a4e3-9196c7ee78bd'
