@@ -2,7 +2,13 @@ import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast';
@@ -112,19 +118,21 @@ export type PromptCommentsPanelProps = {
 type CommentFormValues = z.infer<typeof commentFormSchema>;
 type ThreadFormValues = z.infer<typeof threadFormSchema>;
 
+type CommentsPages = InfiniteData<Comment[]> | undefined;
+
 type CreateOptimisticContext = {
-  previousComments: Comment[];
+  previousData: CommentsPages;
   queryKey: ReturnType<typeof commentThreadCommentsQueryKey>;
   optimisticId: string;
 };
 
 type DeleteOptimisticContext = {
-  previousComments: Comment[];
+  previousData: CommentsPages;
   queryKey: ReturnType<typeof commentThreadCommentsQueryKey>;
 };
 
 type UpdateOptimisticContext = {
-  previousComments: Comment[];
+  previousData: CommentsPages;
   queryKey: ReturnType<typeof commentThreadCommentsQueryKey>;
 };
 
@@ -200,43 +208,106 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
   const planLimits = (planLimitsQuery.data ?? null) as PlanLimitMap | null;
   const planLimitRecord = planLimits?.[THREAD_LIMIT_KEY] ?? null;
 
-  const threadsQuery = useQuery({
+  const previousThreadIdRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    const previousThreadId = previousThreadIdRef.current;
+
+    if (previousThreadId && previousThreadId !== activeThreadId && promptId) {
+      queryClient.removeQueries({
+        queryKey: commentThreadCommentsQueryKey(promptId, previousThreadId, COMMENTS_PAGINATION),
+      });
+    }
+
+    previousThreadIdRef.current = activeThreadId;
+  }, [activeThreadId, promptId, queryClient]);
+
+  const threadsQuery = useInfiniteQuery<
+    CommentThread[],
+    Error,
+    InfiniteData<CommentThread[]>,
+    ReturnType<typeof commentThreadsQueryKey>,
+    number
+  >({
     queryKey: commentThreadsQueryKey(promptId, THREADS_PAGINATION),
-    queryFn: () => {
+    queryFn: ({ pageParam = THREADS_PAGINATION.offset }) => {
       if (!promptId) {
         throw new Error('Prompt ID is required to fetch threads.');
       }
 
-      return fetchPromptCommentThreads({ promptId, ...THREADS_PAGINATION });
+      return fetchPromptCommentThreads({
+        promptId,
+        offset: pageParam,
+        limit: THREADS_PAGINATION.limit,
+      });
     },
     enabled: !!promptId,
+    initialPageParam: THREADS_PAGINATION.offset,
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length < THREADS_PAGINATION.limit) {
+        return undefined;
+      }
+
+      const totalItems = allPages.reduce((count, page) => count + page.length, 0);
+      return THREADS_PAGINATION.offset + totalItems;
+    },
     staleTime: 60 * 1000,
   });
 
-  React.useEffect(() => {
-    if (!threadsQuery.data || !threadsQuery.data.length) {
-      return;
-    }
-
-    if (!activeThreadId) {
-      setActiveThreadId(threadsQuery.data[0]?.id ?? null);
-    } else if (!threadsQuery.data.some((thread) => thread.id === activeThreadId)) {
-      setActiveThreadId(threadsQuery.data[0]?.id ?? null);
-    }
-  }, [activeThreadId, threadsQuery.data]);
-
-  const commentsQuery = useQuery({
+  const commentsQuery = useInfiniteQuery<
+    Comment[],
+    Error,
+    InfiniteData<Comment[]>,
+    ReturnType<typeof commentThreadCommentsQueryKey>,
+    number
+  >({
     queryKey: commentThreadCommentsQueryKey(promptId, activeThreadId, COMMENTS_PAGINATION),
-    queryFn: () => {
+    queryFn: ({ pageParam = COMMENTS_PAGINATION.offset }) => {
       if (!promptId || !activeThreadId) {
         throw new Error('Prompt and thread IDs are required to fetch comments.');
       }
 
-      return fetchThreadComments({ promptId, threadId: activeThreadId, ...COMMENTS_PAGINATION });
+      return fetchThreadComments({
+        promptId,
+        threadId: activeThreadId,
+        offset: pageParam,
+        limit: COMMENTS_PAGINATION.limit,
+      });
     },
     enabled: !!promptId && !!activeThreadId,
+    initialPageParam: COMMENTS_PAGINATION.offset,
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage.length < COMMENTS_PAGINATION.limit) {
+        return undefined;
+      }
+
+      const totalItems = allPages.reduce((count, page) => count + page.length, 0);
+      return COMMENTS_PAGINATION.offset + totalItems;
+    },
     staleTime: 30 * 1000,
   });
+
+  const threads = React.useMemo<CommentThread[]>(
+    () => threadsQuery.data?.pages.flat() ?? [],
+    [threadsQuery.data],
+  );
+
+  const comments = React.useMemo<Comment[]>(
+    () => commentsQuery.data?.pages.flat() ?? [],
+    [commentsQuery.data],
+  );
+
+  React.useEffect(() => {
+    if (!threads.length) {
+      return;
+    }
+
+    if (!activeThreadId) {
+      setActiveThreadId(threads[0]?.id ?? null);
+    } else if (!threads.some((thread) => thread.id === activeThreadId)) {
+      setActiveThreadId(threads[0]?.id ?? null);
+    }
+  }, [activeThreadId, threads]);
 
   const createCommentMutation = useMutation<Comment, Error, CommentFormValues, CreateOptimisticContext>({
     mutationFn: async (values) => {
@@ -271,8 +342,7 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
 
       await queryClient.cancelQueries({ queryKey });
 
-      const previousComments =
-        queryClient.getQueryData<Comment[]>(queryKey) ?? [];
+      const previousData = queryClient.getQueryData<InfiniteData<Comment[]>>(queryKey);
 
       const optimisticId = `optimistic-${Date.now()}`;
       const optimisticComment: Comment = {
@@ -286,13 +356,31 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
         updatedAt: new Date().toISOString(),
       };
 
-      queryClient.setQueryData<Comment[]>(queryKey, [...previousComments, optimisticComment]);
+      queryClient.setQueryData<InfiniteData<Comment[]>>(queryKey, (current) => {
+        if (!current || current.pages.length === 0) {
+          return {
+            pages: [[optimisticComment]],
+            pageParams: current?.pageParams?.length
+              ? current.pageParams
+              : [COMMENTS_PAGINATION.offset],
+          } satisfies InfiniteData<Comment[]>;
+        }
 
-      return { previousComments, queryKey, optimisticId } satisfies CreateOptimisticContext;
+        const pages = current.pages.map((page) => [...page]);
+        const lastPageIndex = pages.length - 1;
+        pages[lastPageIndex] = [...pages[lastPageIndex], optimisticComment];
+
+        return {
+          ...current,
+          pages,
+        } satisfies InfiniteData<Comment[]>;
+      });
+
+      return { previousData, queryKey, optimisticId } satisfies CreateOptimisticContext;
     },
     onError: (error, values, context) => {
       if (context) {
-        queryClient.setQueryData<Comment[]>(context.queryKey, context.previousComments);
+        queryClient.setQueryData(context.queryKey, context.previousData);
       }
 
       commentForm.reset({ body: values.body });
@@ -317,9 +405,18 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
         return;
       }
 
-      queryClient.setQueryData<Comment[]>(context.queryKey, (current = []) =>
-        current.map((comment) => (comment.id === context.optimisticId ? newComment : comment)),
-      );
+      queryClient.setQueryData<InfiniteData<Comment[]>>(context.queryKey, (current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          pages: current.pages.map((page) =>
+            page.map((comment) => (comment.id === context.optimisticId ? newComment : comment)),
+          ),
+        } satisfies InfiniteData<Comment[]>;
+      });
       commentForm.reset({ body: '' });
       queryClient.invalidateQueries({ queryKey: promptCommentsQueryKey(promptId) });
     },
@@ -357,19 +454,29 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
 
       await queryClient.cancelQueries({ queryKey });
 
-      const previousComments =
-        queryClient.getQueryData<Comment[]>(queryKey) ?? [];
+      const previousData = queryClient.getQueryData<InfiniteData<Comment[]>>(queryKey);
 
-      queryClient.setQueryData<Comment[]>(
+      queryClient.setQueryData<InfiniteData<Comment[]>>(
         queryKey,
-        previousComments.filter((comment) => comment.id !== variables.commentId),
+        (current) => {
+          if (!current) {
+            return current;
+          }
+
+          return {
+            ...current,
+            pages: current.pages.map((page) =>
+              page.filter((comment) => comment.id !== variables.commentId),
+            ),
+          } satisfies InfiniteData<Comment[]>;
+        },
       );
 
-      return { previousComments, queryKey } satisfies DeleteOptimisticContext;
+      return { previousData, queryKey } satisfies DeleteOptimisticContext;
     },
     onError: (error, _variables, context) => {
       if (context) {
-        queryClient.setQueryData<Comment[]>(context.queryKey, context.previousComments);
+        queryClient.setQueryData(context.queryKey, context.previousData);
       }
 
       if (error instanceof Error && error.message.trim().length > 0) {
@@ -423,25 +530,30 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
 
       await queryClient.cancelQueries({ queryKey });
 
-      const previousComments = (queryClient.getQueryData<Comment[]>(queryKey) ?? []).map((comment) => ({
-        ...comment,
-      }));
+      const previousData = queryClient.getQueryData<InfiniteData<Comment[]>>(queryKey);
 
       const updatedAt = new Date().toISOString();
 
-      queryClient.setQueryData<Comment[]>(queryKey, (current = []) =>
-        current.map((comment) =>
-          comment.id === commentId
-            ? { ...comment, body, updatedAt }
-            : comment,
-        ),
-      );
+      queryClient.setQueryData<InfiniteData<Comment[]>>(queryKey, (current) => {
+        if (!current) {
+          return current;
+        }
 
-      return { previousComments, queryKey } satisfies UpdateOptimisticContext;
+        return {
+          ...current,
+          pages: current.pages.map((page) =>
+            page.map((comment) =>
+              comment.id === commentId ? { ...comment, body, updatedAt } : comment,
+            ),
+          ),
+        } satisfies InfiniteData<Comment[]>;
+      });
+
+      return { previousData, queryKey } satisfies UpdateOptimisticContext;
     },
     onError: (error, _variables, context) => {
       if (context) {
-        queryClient.setQueryData<Comment[]>(context.queryKey, context.previousComments);
+        queryClient.setQueryData(context.queryKey, context.previousData);
       }
 
       const message =
@@ -457,9 +569,18 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
         return;
       }
 
-      queryClient.setQueryData<Comment[]>(context.queryKey, (current = []) =>
-        current.map((comment) => (comment.id === variables.commentId ? updatedComment : comment)),
-      );
+      queryClient.setQueryData<InfiniteData<Comment[]>>(context.queryKey, (current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          pages: current.pages.map((page) =>
+            page.map((comment) => (comment.id === variables.commentId ? updatedComment : comment)),
+          ),
+        } satisfies InfiniteData<Comment[]>;
+      });
 
       setEditingCommentId(null);
       setEditingDraft('');
@@ -485,9 +606,26 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
       }
 
       const threadsKey = commentThreadsQueryKey(promptId, THREADS_PAGINATION);
-      queryClient.setQueryData<CommentThread[]>(threadsKey, (current = []) => {
-        const existing = current.filter((item) => item.id !== thread.id);
-        return [thread, ...existing];
+      queryClient.setQueryData<InfiniteData<CommentThread[]>>(threadsKey, (current) => {
+        const firstPage = current?.pages?.[0] ?? [];
+        const existing = firstPage.filter((item) => item.id !== thread.id);
+        const updatedFirstPage = [thread, ...existing].slice(0, THREADS_PAGINATION.limit);
+
+        if (!current) {
+          return {
+            pages: [updatedFirstPage],
+            pageParams: [THREADS_PAGINATION.offset],
+          } satisfies InfiniteData<CommentThread[]>;
+        }
+
+        const pages = current.pages.map((page, index) =>
+          index === 0 ? updatedFirstPage : page,
+        );
+
+        return {
+          ...current,
+          pages,
+        } satisfies InfiniteData<CommentThread[]>;
       });
 
       setActiveThreadId(thread.id);
@@ -576,11 +714,10 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
     }
 
     const trimmedBody = values.body.trim();
-    const currentThreads = (threadsQuery.data ?? []) as CommentThread[];
     const evaluation = evaluateIntegerPlanLimit({
       limits: planLimits,
       key: THREAD_LIMIT_KEY,
-      currentUsage: currentThreads.length,
+      currentUsage: threads.length,
     });
 
     setThreadEvaluation(evaluation);
@@ -658,18 +795,18 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
     return null;
   }, [planLimitsQuery.error, planLimitsQuery.status, userPlanQuery.error, userPlanQuery.status]);
 
-  const threadsCount = (threadsQuery.data ?? []).length;
+  const threadsCount = threads.length;
 
   const renderThreads = () => {
     if (!promptId) {
       return <p className="text-sm text-muted-foreground">Select a prompt to view discussions.</p>;
     }
 
-    if (threadsQuery.status === 'pending') {
+    if (threadsQuery.isPending) {
       return <p className="text-sm text-muted-foreground">Loading discussions…</p>;
     }
 
-    if (threadsQuery.status === 'error') {
+    if (threadsQuery.isError) {
       return (
         <div className="space-y-2 text-sm">
           <p className="text-destructive">Failed to load discussions. Please try again.</p>
@@ -686,14 +823,12 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
       );
     }
 
-    const threads = (threadsQuery.data ?? []) as CommentThread[];
-
     if (!threads.length) {
       return <p className="text-sm text-muted-foreground">No discussions yet.</p>;
     }
 
     return (
-      <div className="space-y-2">
+      <div className="space-y-3">
         <p className="text-xs text-muted-foreground">Threads</p>
         <div className="flex flex-wrap gap-2">
           {threads.map((thread) => {
@@ -712,6 +847,23 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
             );
           })}
         </div>
+        {threadsQuery.hasNextPage ? (
+          <div className="flex">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => threadsQuery.fetchNextPage()}
+              disabled={threadsQuery.isFetchingNextPage}
+              aria-busy={threadsQuery.isFetchingNextPage}
+            >
+              {threadsQuery.isFetchingNextPage ? 'Loading…' : 'Load more discussions'}
+            </Button>
+          </div>
+        ) : null}
+        {!threadsQuery.hasNextPage && (threadsQuery.data?.pageParams.length ?? 0) > 1 ? (
+          <p className="text-xs text-muted-foreground">You have reached the end of discussions.</p>
+        ) : null}
       </div>
     );
   };
@@ -721,11 +873,11 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
       return null;
     }
 
-    if (commentsQuery.status === 'pending') {
+    if (commentsQuery.isPending) {
       return <p className="text-sm text-muted-foreground">Loading comments…</p>;
     }
 
-    if (commentsQuery.status === 'error') {
+    if (commentsQuery.isError) {
       return (
         <div className="space-y-2 text-sm">
           <p className="text-destructive">Failed to load comments. Please try again.</p>
@@ -742,92 +894,109 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
       );
     }
 
-    const comments = (commentsQuery.data ?? []) as Comment[];
-
     if (!comments.length) {
       return <p className="text-sm text-muted-foreground">No comments yet. Start the conversation!</p>;
     }
 
     return (
-      <ul className="space-y-3">
-        {comments.map((comment) => {
-          const isDeleting =
-            deleteCommentMutation.isPending && deleteCommentMutation.variables?.commentId === comment.id;
-          const canDelete = userId && comment.createdBy === userId;
-          const canEdit = userId && comment.createdBy === userId;
-          const isEditing = editingCommentId === comment.id;
-          const isUpdating =
-            updateCommentMutation.isPending && updateCommentMutation.variables?.commentId === comment.id;
+      <div className="space-y-3">
+        <ul className="space-y-3">
+          {comments.map((comment) => {
+            const isDeleting =
+              deleteCommentMutation.isPending && deleteCommentMutation.variables?.commentId === comment.id;
+            const canDelete = userId && comment.createdBy === userId;
+            const canEdit = userId && comment.createdBy === userId;
+            const isEditing = editingCommentId === comment.id;
+            const isUpdating =
+              updateCommentMutation.isPending && updateCommentMutation.variables?.commentId === comment.id;
 
-          return (
-            <li key={comment.id} className="rounded-md border p-3 text-sm">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="font-medium">{comment.createdBy}</span>
-                <span className="text-xs text-muted-foreground">{formatTimestamp(comment.createdAt)}</span>
-              </div>
-              {isEditing ? (
-                <div className="mt-2 space-y-2">
-                  <textarea
-                    id={`prompt-comment-edit-${comment.id}`}
-                    className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={editingDraft}
-                    onChange={(event) => setEditingDraft(event.target.value)}
-                    aria-invalid={Boolean(editingError)}
-                  />
-                  {editingError ? <p className="text-xs text-destructive">{editingError}</p> : null}
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCancelEditing}
-                      disabled={isUpdating}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => handleUpdateComment(comment.id)}
-                      disabled={isUpdating}
-                    >
-                      {isUpdating ? 'Saving…' : 'Save'}
-                    </Button>
+            return (
+              <li key={comment.id} className="rounded-md border p-3 text-sm">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium">{comment.createdBy}</span>
+                  <span className="text-xs text-muted-foreground">{formatTimestamp(comment.createdAt)}</span>
+                </div>
+                {isEditing ? (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      id={`prompt-comment-edit-${comment.id}`}
+                      className="min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={editingDraft}
+                      onChange={(event) => setEditingDraft(event.target.value)}
+                      aria-invalid={Boolean(editingError)}
+                    />
+                    {editingError ? <p className="text-xs text-destructive">{editingError}</p> : null}
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCancelEditing}
+                        disabled={isUpdating}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleUpdateComment(comment.id)}
+                        disabled={isUpdating}
+                      >
+                        {isUpdating ? 'Saving…' : 'Save'}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <p className="mt-2 whitespace-pre-wrap text-sm">{comment.body}</p>
-              )}
-              {!isEditing && (canEdit || canDelete) ? (
-                <div className="mt-3 flex justify-end gap-2">
-                  {canEdit ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleStartEditing(comment)}
-                      disabled={isDeleting}
-                    >
-                      Edit
-                    </Button>
-                  ) : null}
-                  {canDelete ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleDeleteComment(comment.id)}
-                      disabled={isDeleting}
-                    >
-                      {isDeleting ? 'Deleting…' : 'Delete'}
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
+                ) : (
+                  <p className="mt-2 whitespace-pre-wrap text-sm">{comment.body}</p>
+                )}
+                {!isEditing && (canEdit || canDelete) ? (
+                  <div className="mt-3 flex justify-end gap-2">
+                    {canEdit ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleStartEditing(comment)}
+                        disabled={isDeleting}
+                      >
+                        Edit
+                      </Button>
+                    ) : null}
+                    {canDelete ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteComment(comment.id)}
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Deleting…' : 'Delete'}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+        {commentsQuery.hasNextPage ? (
+          <div className="flex">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => commentsQuery.fetchNextPage()}
+              disabled={commentsQuery.isFetchingNextPage}
+              aria-busy={commentsQuery.isFetchingNextPage}
+            >
+              {commentsQuery.isFetchingNextPage ? 'Loading…' : 'Load more comments'}
+            </Button>
+          </div>
+        ) : null}
+        {!commentsQuery.hasNextPage && (commentsQuery.data?.pageParams.length ?? 0) > 1 ? (
+          <p className="text-xs text-muted-foreground">You have reached the end of the thread.</p>
+        ) : null}
+      </div>
     );
   };
 
@@ -886,7 +1055,7 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
               createThreadMutation.isPending ||
               !promptId ||
               !userId ||
-              threadsQuery.status === 'pending' ||
+              threadsQuery.isPending ||
               userPlanQuery.status === 'pending' ||
               planLimitsQuery.status === 'pending'
             }

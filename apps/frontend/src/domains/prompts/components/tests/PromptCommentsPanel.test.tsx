@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { vi } from 'vitest';
 
 import { PromptCommentsPanel } from '../PromptCommentsPanel';
@@ -319,7 +319,7 @@ describe('PromptCommentsPanel - comment editing', () => {
     });
 
     await waitFor(() => {
-      const cached = queryClient.getQueryData<Comment[]>([
+      const cached = queryClient.getQueryData<InfiniteData<Comment[]>>([
         'prompt-comments',
         'prompt-1',
         'threads',
@@ -327,7 +327,7 @@ describe('PromptCommentsPanel - comment editing', () => {
         'comments',
         { offset: 0, limit: 50 },
       ]);
-      expect(cached?.[0]?.body).toBe('Updated comment body');
+      expect(cached?.pages[0]?.[0]?.body).toBe('Updated comment body');
     });
 
     await waitFor(() => {
@@ -369,7 +369,7 @@ describe('PromptCommentsPanel - comment editing', () => {
     });
 
     await waitFor(() => {
-      const cached = queryClient.getQueryData<Comment[]>([
+      const cached = queryClient.getQueryData<InfiniteData<Comment[]>>([
         'prompt-comments',
         'prompt-1',
         'threads',
@@ -377,7 +377,7 @@ describe('PromptCommentsPanel - comment editing', () => {
         'comments',
         { offset: 0, limit: 50 },
       ]);
-      expect(cached?.[0]?.body).toBe('Initial comment body');
+      expect(cached?.pages[0]?.[0]?.body).toBe('Initial comment body');
     });
   });
 
@@ -397,6 +397,177 @@ describe('PromptCommentsPanel - comment editing', () => {
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
     expect(screen.getByText('Initial comment body')).toBeInTheDocument();
     expect(updateCommentMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('PromptCommentsPanel - pagination', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchPromptCommentThreadsMock.mockResolvedValue([defaultThread]);
+    fetchThreadCommentsMock.mockResolvedValue([defaultComment]);
+    fetchUserPlanIdMock.mockResolvedValue('plan-free');
+    fetchPlanLimitsMock.mockResolvedValue({
+      comment_threads_per_prompt: {
+        key: 'comment_threads_per_prompt',
+        value_int: 100,
+        value_str: null,
+        value_json: null,
+      },
+    });
+    createCommentThreadMock.mockResolvedValue(defaultThread);
+    createCommentMock.mockResolvedValue(defaultComment);
+    deleteCommentMock.mockResolvedValue('comment-1');
+    updateCommentMock.mockResolvedValue(defaultComment);
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('loads additional comments when clicking Load more comments', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      ...defaultComment,
+      id: `comment-${index}`,
+      body: `Comment ${index}`,
+      createdAt: `2024-05-01T00:00:${String(index).padStart(2, '0')}.000Z`,
+      updatedAt: `2024-05-01T00:00:${String(index).padStart(2, '0')}.000Z`,
+    }));
+
+    const secondPage = [
+      {
+        ...defaultComment,
+        id: 'comment-50',
+        body: 'Second page comment',
+        createdAt: '2024-05-02T00:00:00.000Z',
+        updatedAt: '2024-05-02T00:00:00.000Z',
+      },
+    ];
+
+    fetchThreadCommentsMock.mockImplementation(async ({ offset }) => {
+      if (offset === 0) {
+        return firstPage;
+      }
+
+      if (offset === 50) {
+        return secondPage;
+      }
+
+      return [];
+    });
+
+    const { user, queryClient } = renderPanel();
+
+    const loadMoreButton = await screen.findByRole('button', { name: 'Load more comments' });
+    await user.click(loadMoreButton);
+
+    await waitFor(() => {
+      expect(fetchThreadCommentsMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        offset: 50,
+        limit: 50,
+      });
+    });
+
+    expect(await screen.findByText('Second page comment')).toBeInTheDocument();
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<InfiniteData<Comment[]>>([
+        'prompt-comments',
+        'prompt-1',
+        'threads',
+        'thread-1',
+        'comments',
+        { offset: 0, limit: 50 },
+      ]);
+
+      expect(cached?.pages.flat().length).toBe(51);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Load more comments' })).not.toBeInTheDocument();
+    });
+
+    expect(await screen.findByText('You have reached the end of the thread.')).toBeInTheDocument();
+  });
+
+  it('fetches the next page of discussions when Load more discussions is clicked', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => ({
+      ...defaultThread,
+      id: `thread-${index}`,
+      createdAt: `2024-05-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`,
+    }));
+
+    const secondPage = [
+      {
+        ...defaultThread,
+        id: 'thread-20',
+        createdAt: '2024-06-01T00:00:00.000Z',
+      },
+    ];
+
+    fetchPromptCommentThreadsMock.mockImplementation(async ({ offset }) => {
+      if (offset === 0) {
+        return firstPage;
+      }
+
+      if (offset === 20) {
+        return secondPage;
+      }
+
+      return [];
+    });
+
+    fetchThreadCommentsMock.mockResolvedValue([]);
+
+    const { user, queryClient } = renderPanel();
+
+    const loadMoreButton = await screen.findByRole('button', { name: 'Load more discussions' });
+    await user.click(loadMoreButton);
+
+    await waitFor(() => {
+      expect(fetchPromptCommentThreadsMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        offset: 20,
+        limit: 20,
+      });
+    });
+
+    await waitFor(() => {
+      const cached = queryClient.getQueryData<InfiniteData<CommentThread[]>>([
+        'prompt-comments',
+        'prompt-1',
+        'threads',
+        { offset: 0, limit: 20 },
+      ]);
+
+      expect(cached?.pages.flat().length).toBe(21);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Load more discussions' })).not.toBeInTheDocument();
+    });
+
+    expect(await screen.findByText('You have reached the end of discussions.')).toBeInTheDocument();
+  });
+
+  it('allows retrying a failed comments fetch', async () => {
+    fetchThreadCommentsMock.mockRejectedValueOnce(new Error('Network error'));
+    fetchThreadCommentsMock.mockResolvedValueOnce([defaultComment]);
+
+    const { user } = renderPanel();
+
+    expect(
+      await screen.findByText('Failed to load comments. Please try again.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() => {
+      expect(fetchThreadCommentsMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(await screen.findByText('Initial comment body')).toBeInTheDocument();
   });
 });
 

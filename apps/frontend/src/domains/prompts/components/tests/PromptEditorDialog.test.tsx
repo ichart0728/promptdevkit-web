@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { vi } from 'vitest';
 
 import { PromptEditorDialog } from '../PromptEditorDialog';
@@ -467,8 +467,9 @@ describe('PromptEditorDialog', () => {
     });
 
     await waitFor(() => {
-      const storedComments = queryClient.getQueryData<Comment[]>(commentsQueryKey) ?? [];
-      expect(storedComments.some((comment) => comment.body === 'Nice work!')).toBe(true);
+      const storedComments = queryClient.getQueryData<InfiniteData<Comment[]>>(commentsQueryKey);
+      const flatComments = storedComments?.pages.flat() ?? [];
+      expect(flatComments.some((comment) => comment.body === 'Nice work!')).toBe(true);
     });
 
     await waitFor(() => {
@@ -527,8 +528,9 @@ describe('PromptEditorDialog', () => {
     });
 
     await waitFor(() => {
-      const storedComments = queryClient.getQueryData<Comment[]>(commentsQueryKey) ?? [];
-      expect(storedComments.some((comment) => comment.id === 'comment-1')).toBe(false);
+      const storedComments = queryClient.getQueryData<InfiniteData<Comment[]>>(commentsQueryKey);
+      const flatComments = storedComments?.pages.flat() ?? [];
+      expect(flatComments.some((comment) => comment.id === 'comment-1')).toBe(false);
     });
 
     await waitFor(() => {
