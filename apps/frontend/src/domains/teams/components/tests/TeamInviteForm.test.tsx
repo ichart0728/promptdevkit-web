@@ -21,9 +21,7 @@ const supabaseRpcMock = vi.fn();
 const supabaseFromMock = vi.fn();
 
 vi.mock('@/domains/teams/api/teams', async () => {
-  const actual = await vi.importActual<typeof import('../../api/teams')>(
-    '@/domains/teams/api/teams',
-  );
+  const actual = (await vi.importActual('@/domains/teams/api/teams')) as Record<string, unknown>;
 
   return {
     ...actual,
