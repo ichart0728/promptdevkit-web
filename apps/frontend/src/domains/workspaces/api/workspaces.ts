@@ -16,7 +16,10 @@ type WorkspaceRow = {
   type: Workspace['type'];
   team_id: string | null;
   archived_at: string | null;
+  created_at: string;
 };
+
+const WORKSPACE_SELECT_COLUMNS = 'id,name,type,team_id,archived_at,created_at';
 
 export const workspacesQueryKey = (userId: string | null) => ['workspaces', userId ?? 'anonymous'] as const;
 
@@ -31,7 +34,8 @@ const mapRowToWorkspace = (row: WorkspaceRow): Workspace => ({
 export const fetchWorkspaces = async (): Promise<Workspace[]> => {
   const { data, error } = await supabase
     .from('workspaces')
-    .select('id,name,type,team_id,archived_at')
+    // Rely on RLS instead of constructing manual OR filters (which produced 400s).
+    .select(WORKSPACE_SELECT_COLUMNS)
     .order('created_at', { ascending: true });
 
   if (error) {
