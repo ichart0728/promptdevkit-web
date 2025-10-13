@@ -1,6 +1,14 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  RouterProvider,
+  Outlet,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from '@tanstack/react-router';
 import { vi } from 'vitest';
 import type { PostgrestError } from '@supabase/postgrest-js';
 
@@ -64,17 +72,40 @@ const createTestQueryClient = () =>
       queries: { retry: false },
     },
   });
+type RouterProviderProps = Parameters<typeof RouterProvider>[0];
+type AppRouter = RouterProviderProps['router'];
 
-const renderPromptsPage = () => {
+const createTestRouter = (queryClient: QueryClient, initialSearch = '') => {
+  const rootRoute = createRootRoute({
+    component: () => (
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+      </QueryClientProvider>
+    ),
+  });
+
+  const promptsTestRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/prompts',
+    component: PromptsPage,
+  });
+
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([promptsTestRoute]),
+    history: createMemoryHistory({ initialEntries: [`/prompts${initialSearch}`] }),
+    defaultPreload: 'intent',
+  });
+
+  return router as unknown as AppRouter;
+};
+
+const renderPromptsPage = (options: { initialSearch?: string } = {}) => {
   const queryClient = createTestQueryClient();
+  const router = createTestRouter(queryClient, options.initialSearch ?? '');
 
-  const renderResult = render(
-    <QueryClientProvider client={queryClient}>
-      <PromptsPage />
-    </QueryClientProvider>,
-  );
+  const renderResult = render(<RouterProvider router={router} />);
 
-  return { ...renderResult, queryClient };
+  return { ...renderResult, queryClient, router };
 };
 
 const buildSessionQueryValue = (
@@ -135,12 +166,12 @@ describe('PromptsPage', () => {
     cleanup();
   });
 
-  it('renders a loading state while prompts are fetching', () => {
+  it('renders a loading state while prompts are fetching', async () => {
     fetchPromptsMock.mockReturnValue(new Promise<Prompt[]>(() => {}));
 
     renderPromptsPage();
 
-    expect(screen.getByText('Loading prompts…')).toBeInTheDocument();
+    expect(await screen.findByText('Loading prompts…')).toBeInTheDocument();
   });
 
   it('renders the empty state when no prompts exist', async () => {
@@ -302,6 +333,101 @@ describe('PromptsPage', () => {
         screen.getByRole('button', { name: 'Toggle favorite for prompt Prompt Beta' }),
       ).toHaveAttribute('aria-pressed', 'false');
     });
+  });
+
+  it('filters prompts using the search form and syncs filters to the URL', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Meeting summary',
+        body: 'Summarize weekly standups.',
+        tags: ['meeting', 'weekly'],
+      },
+      {
+        id: 'prompt-2',
+        title: 'Retro checklist',
+        body: 'Guide the team retrospective.',
+        tags: ['retro', 'team', 'weekly'],
+      },
+      {
+        id: 'prompt-3',
+        title: 'Launch plan',
+        body: 'Coordinate the next product launch.',
+        tags: ['launch', 'product'],
+      },
+    ]);
+    const user = userEvent.setup();
+
+    const { router } = renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Meeting summary' });
+
+    await user.type(screen.getByLabelText('Search prompts'), 'weekly');
+    await user.type(screen.getByLabelText('Filter tags'), 'team, weekly');
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    });
+
+    await screen.findByRole('heading', { level: 3, name: 'Retro checklist' });
+    expect(screen.queryByRole('heading', { level: 3, name: 'Meeting summary' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 3, name: 'Launch plan' })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({ q: 'weekly', tags: ['team', 'weekly'] });
+      const params = new URLSearchParams(router.state.location.searchStr);
+      expect(params.get('q')).toBe('weekly');
+      expect(JSON.parse(params.get('tags') ?? '[]')).toEqual(['team', 'weekly']);
+    });
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Reset' }));
+    });
+
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({});
+      expect(router.state.location.searchStr).toBe('');
+    });
+
+    await screen.findByRole('heading', { level: 3, name: 'Meeting summary' });
+    await screen.findByRole('heading', { level: 3, name: 'Retro checklist' });
+    await screen.findByRole('heading', { level: 3, name: 'Launch plan' });
+  });
+
+  it('restores filters from the URL on load', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Meeting summary',
+        body: 'Summarize weekly standups.',
+        tags: ['meeting', 'weekly'],
+      },
+      {
+        id: 'prompt-2',
+        title: 'Retro checklist',
+        body: 'Guide the team retrospective.',
+        tags: ['retro', 'team', 'weekly'],
+      },
+      {
+        id: 'prompt-3',
+        title: 'Launch plan',
+        body: 'Coordinate the next product launch.',
+        tags: ['launch', 'product'],
+      },
+    ]);
+
+    const { router } = renderPromptsPage({ initialSearch: '?q=retro&tags=team&tags=weekly' });
+
+    await screen.findByRole('heading', { level: 3, name: 'Retro checklist' });
+    expect(screen.queryByRole('heading', { level: 3, name: 'Meeting summary' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 3, name: 'Launch plan' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Search prompts')).toHaveValue('retro');
+    expect(screen.getByLabelText('Filter tags')).toHaveValue('team, weekly');
+
+    expect(router.state.location.search).toEqual({ q: 'retro', tags: ['team', 'weekly'] });
+    const params = new URLSearchParams(router.state.location.searchStr);
+    expect(params.get('q')).toBe('retro');
+    expect(JSON.parse(params.get('tags') ?? '[]')).toEqual(['team', 'weekly']);
   });
 
   it('recommends an upgrade when the prompt limit is reached', async () => {
@@ -537,7 +663,7 @@ describe('PromptsPage workspace awareness', () => {
   it('switches plan limit keys when the active workspace changes', async () => {
     fetchPromptsMock.mockResolvedValue([]);
 
-    const { rerender, queryClient } = renderPromptsPage();
+    const { unmount } = renderPromptsPage();
 
     await screen.findByText('Current usage in Personal Space: 0 of 2 prompts');
     expect(fetchPromptsMock).toHaveBeenLastCalledWith({ workspace: personalWorkspace });
@@ -546,12 +672,10 @@ describe('PromptsPage workspace awareness', () => {
     fetchPromptsMock.mockResolvedValueOnce([]);
 
     await act(async () => {
-      rerender(
-        <QueryClientProvider client={queryClient}>
-          <PromptsPage />
-        </QueryClientProvider>,
-      );
+      unmount();
     });
+
+    renderPromptsPage();
 
     await screen.findByText('Team workspace');
     expect(fetchPromptsMock).toHaveBeenLastCalledWith({ workspace: teamWorkspace });

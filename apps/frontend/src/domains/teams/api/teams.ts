@@ -324,11 +324,14 @@ export const inviteTeamMember = async ({
 }: InviteTeamMemberParams): Promise<TeamMember> => {
   const normalizedEmail = normalizeEmail(email);
   const { data, error } = await supabase
-    .rpc('invite_team_member', {
-      p_team_id: teamId,
-      p_invitee_email: normalizedEmail,
-      p_role: role,
-    })
+    .rpc(
+      'invite_team_member',
+      {
+        p_team_id: teamId,
+        p_invitee_email: normalizedEmail,
+        p_role: role,
+      } as never,
+    )
     .single<InviteTeamMemberRow>();
 
   if (error) {

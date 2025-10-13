@@ -8,6 +8,7 @@ import { PlanLimitError, type IntegerPlanLimitEvaluation } from '@/lib/limits';
 import { TeamInviteForm } from '../TeamInviteForm';
 
 import { TeamInviteUserNotFoundError, type Team } from '../../api/teams';
+import type * as teamsApi from '../../api/teams';
 
 const toastMock = vi.fn();
 
@@ -21,9 +22,7 @@ const supabaseRpcMock = vi.fn();
 const supabaseFromMock = vi.fn();
 
 vi.mock('@/domains/teams/api/teams', async () => {
-  const actual = await vi.importActual<typeof import('../../api/teams')>(
-    '@/domains/teams/api/teams',
-  );
+  const actual = await vi.importActual<typeof teamsApi>('@/domains/teams/api/teams');
 
   return {
     ...actual,

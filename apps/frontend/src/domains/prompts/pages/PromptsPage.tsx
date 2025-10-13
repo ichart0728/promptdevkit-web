@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { PostgrestError } from '@supabase/postgrest-js';
 import * as React from 'react';
 import { useForm } from 'react-hook-form';
@@ -152,6 +153,24 @@ const formatTags = (raw: string | undefined) =>
     .map((tag) => tag.trim())
     .filter(Boolean) ?? [];
 
+const promptFiltersSchema = z
+  .object({
+    q: z.string().optional(),
+    tagsInput: z.string().optional(),
+  })
+  .transform(({ q, tagsInput }) => {
+    const trimmedQuery = q?.trim() ?? '';
+    const normalizedTagsInput = tagsInput?.trim() ?? '';
+
+    return {
+      q: trimmedQuery,
+      tagsInput: normalizedTagsInput,
+      tags: formatTags(tagsInput),
+    };
+  });
+
+type PromptFiltersFormState = z.infer<typeof promptFiltersSchema>;
+
 const buildErrorMessage = (message?: string) =>
   `Failed to load prompts. ${message ?? 'Unknown error'}`;
 
@@ -220,6 +239,8 @@ export const PromptsPage = () => {
   const [promptBeingEdited, setPromptBeingEdited] = React.useState<PromptListItemData | null>(null);
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
+  const navigate = useNavigate({ from: '/prompts' });
+  const searchParams = useSearch({ from: '/prompts' });
 
   const workspaceId = activeWorkspace?.id ?? null;
   const workspaceType = activeWorkspace?.type ?? null;
@@ -238,6 +259,17 @@ export const PromptsPage = () => {
   React.useEffect(() => {
     setShowFavoritesOnly(false);
   }, [workspaceId]);
+
+  const searchQuery = searchParams.q ?? '';
+  const searchTags = React.useMemo(
+    () => (searchParams.tags ?? []).map((tag) => tag.trim()).filter((tag) => tag.length > 0),
+    [searchParams.tags],
+  );
+  const normalizedSearchQuery = React.useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
+  const normalizedSearchTags = React.useMemo(
+    () => searchTags.map((tag) => tag.toLowerCase()),
+    [searchTags],
+  );
 
   const promptsQuery = useQuery({
     queryKey: promptsKey,
@@ -543,6 +575,23 @@ export const PromptsPage = () => {
   const promptIds = React.useMemo(() => prompts.map((prompt) => prompt.id), [prompts]);
   const promptIdsSignature = React.useMemo(() => promptIds.join(','), [promptIds]);
 
+  const filtersForm = useForm<PromptFiltersFormState>({
+    resolver: zodResolver(promptFiltersSchema),
+    defaultValues: {
+      q: searchQuery,
+      tagsInput: searchTags.join(', '),
+      tags: searchTags,
+    },
+  });
+
+  React.useEffect(() => {
+    filtersForm.reset({
+      q: searchQuery,
+      tagsInput: searchTags.join(', '),
+      tags: searchTags,
+    });
+  }, [filtersForm, searchQuery, searchTags]);
+
   React.useEffect(() => {
     if (!workspaceId || !userId) {
       return;
@@ -588,11 +637,52 @@ export const PromptsPage = () => {
   }, [favoritesMap, prompts]);
   const shouldFilterFavorites = showFavoritesOnly && favoritesQuery.status !== 'error';
   const favoritesFilterLabel = showFavoritesOnly ? 'Show all prompts' : 'Show favorites only';
+  const filteredPrompts = React.useMemo(() => {
+    if (normalizedSearchQuery.length === 0 && normalizedSearchTags.length === 0) {
+      return promptsWithFavorites;
+    }
+
+    return promptsWithFavorites.filter((prompt) => {
+      const promptTags = prompt.tags ?? [];
+      const normalizedPromptTags = promptTags.map((tag) => tag.toLowerCase());
+      const matchesQuery =
+        normalizedSearchQuery.length === 0 ||
+        prompt.title.toLowerCase().includes(normalizedSearchQuery) ||
+        normalizedPromptTags.some((tag) => tag.includes(normalizedSearchQuery));
+      const matchesTags =
+        normalizedSearchTags.length === 0 ||
+        normalizedSearchTags.every((tag) => normalizedPromptTags.includes(tag));
+
+      return matchesQuery && matchesTags;
+    });
+  }, [normalizedSearchQuery, normalizedSearchTags, promptsWithFavorites]);
   const visiblePrompts = React.useMemo(
-    () => (shouldFilterFavorites ? promptsWithFavorites.filter((prompt) => prompt.isFavorite) : promptsWithFavorites),
-    [promptsWithFavorites, shouldFilterFavorites],
+    () => (shouldFilterFavorites ? filteredPrompts.filter((prompt) => prompt.isFavorite) : filteredPrompts),
+    [filteredPrompts, shouldFilterFavorites],
   );
+  const hasSearchQuery = normalizedSearchQuery.length > 0;
+  const hasTagFilters = normalizedSearchTags.length > 0;
+  const hasActiveSearchFilters = hasSearchQuery || hasTagFilters;
   const currentUsage = prompts.length;
+
+  const handleFiltersSubmit = filtersForm.handleSubmit((values) => {
+    const nextSearch: { q?: string; tags?: string[] } = {};
+
+    if (values.q.length > 0) {
+      nextSearch.q = values.q;
+    }
+
+    if (values.tags.length > 0) {
+      nextSearch.tags = values.tags;
+    }
+
+    void navigate({ search: nextSearch, replace: true });
+  });
+
+  const handleFiltersReset = () => {
+    filtersForm.reset({ q: '', tagsInput: '', tags: [] });
+    void navigate({ search: {}, replace: true });
+  };
 
   const handleUpgradeDialogChange = (open: boolean) => {
     setUpgradeOpen(open);
@@ -693,10 +783,20 @@ export const PromptsPage = () => {
       return <div className="rounded-md border border-dashed p-6 text-sm">Loading favorite prompts…</div>;
     }
 
+    if (hasActiveSearchFilters && filteredPrompts.length === 0) {
+      return (
+        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+          No prompts match your filters. Adjust the search term or tags to broaden the results.
+        </div>
+      );
+    }
+
     if (shouldFilterFavorites && visiblePrompts.length === 0) {
       return (
         <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
-          No favorite prompts yet. Toggle favorites to curate this list or disable the filter to see all prompts.
+          {hasActiveSearchFilters
+            ? 'No prompts match your filters. Adjust the search term, tags, or favorites toggle to continue.'
+            : 'No favorite prompts yet. Toggle favorites to curate this list or disable the filter to see all prompts.'}
         </div>
       );
     }
@@ -974,35 +1074,71 @@ export const PromptsPage = () => {
         </div>
 
         <div className="space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col">
-            <h2 className="text-lg font-semibold">
-              Workspace prompts{workspaceName ? ` · ${workspaceName}` : ''}
-            </h2>
-            {workspaceType ? (
-              <span className="text-xs uppercase text-muted-foreground">
-                {workspaceType === 'team' ? 'Team workspace' : 'Personal workspace'}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col">
+              <h2 className="text-lg font-semibold">
+                Workspace prompts{workspaceName ? ` · ${workspaceName}` : ''}
+              </h2>
+              {workspaceType ? (
+                <span className="text-xs uppercase text-muted-foreground">
+                  {workspaceType === 'team' ? 'Team workspace' : 'Personal workspace'}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
+              <span className="text-sm text-muted-foreground">
+                Query key: [{promptsKey[0]}, "{promptsKey[1]}"]
               </span>
-            ) : null}
+              <Button
+                type="button"
+                variant={showFavoritesOnly ? 'default' : 'outline'}
+                size="sm"
+                aria-pressed={showFavoritesOnly}
+                onClick={() => setShowFavoritesOnly((previous) => !previous)}
+                disabled={prompts.length === 0}
+              >
+                {favoritesFilterLabel}
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <span className="text-sm text-muted-foreground">
-              Query key: [{promptsKey[0]}, "{promptsKey[1]}"]
-            </span>
-            <Button
-              type="button"
-              variant={showFavoritesOnly ? 'default' : 'outline'}
-              size="sm"
-              aria-pressed={showFavoritesOnly}
-              onClick={() => setShowFavoritesOnly((previous) => !previous)}
-              disabled={prompts.length === 0}
-            >
-              {favoritesFilterLabel}
-            </Button>
-          </div>
+          <form
+            onSubmit={handleFiltersSubmit}
+            className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-[minmax(0,1fr),minmax(0,1fr),auto] sm:items-end"
+          >
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium" htmlFor="prompt-search">
+                Search prompts
+              </label>
+              <Input
+                id="prompt-search"
+                placeholder="Find by title or tag"
+                autoComplete="off"
+                {...filtersForm.register('q')}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm font-medium" htmlFor="prompt-tags">
+                Filter tags
+              </label>
+              <Input
+                id="prompt-tags"
+                placeholder="productivity, launch"
+                autoComplete="off"
+                {...filtersForm.register('tagsInput')}
+              />
+              <span className="text-xs text-muted-foreground">Separate tags with commas</span>
+            </div>
+            <div className="flex items-center justify-start gap-2 sm:justify-end">
+              <Button type="submit" size="sm">
+                Apply filters
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={handleFiltersReset} disabled={!hasActiveSearchFilters}>
+                Reset
+              </Button>
+            </div>
+          </form>
+          {renderPrompts()}
         </div>
-        {renderPrompts()}
-      </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
