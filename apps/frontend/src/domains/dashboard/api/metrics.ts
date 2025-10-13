@@ -27,8 +27,6 @@ type WorkspacePlanRow = { plan_id: string | null } | { plan_id: string | null }[
 type WorkspaceMetadataRow = {
   id: string;
   type: 'personal' | 'team';
-  owner_user_id: string | null;
-  team_id: string | null;
   owner_user:
     | {
         user_plan: WorkspacePlanRow;
@@ -36,8 +34,6 @@ type WorkspaceMetadataRow = {
     | null;
   team:
     | {
-        id: string;
-        created_by: string;
         created_by_user:
           | {
               user_plan: WorkspacePlanRow;
@@ -97,14 +93,10 @@ export const fetchWorkspaceUsage = async (): Promise<WorkspaceUsage[]> => {
       `
         id,
         type,
-        owner_user_id,
-        team_id,
         owner_user:users!workspaces_owner_user_id_fkey(
           user_plan:user_plans(plan_id)
         ),
         team:teams!workspaces_team_id_fkey(
-          id,
-          created_by,
           created_by_user:users!teams_created_by_fkey(
             user_plan:user_plans(plan_id)
           )
