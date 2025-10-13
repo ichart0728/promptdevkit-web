@@ -55,9 +55,17 @@ export type CreatePromptParams = {
   title: string;
   body: string;
   tags: string[];
+  note?: string | null;
 };
 
-export const createPrompt = async ({ workspace, userId, title, body, tags }: CreatePromptParams) => {
+export const createPrompt = async ({
+  workspace,
+  userId,
+  title,
+  body,
+  tags,
+  note = null,
+}: CreatePromptParams) => {
   const { id: workspaceId } = workspace;
   const insertPayload = [
     {
@@ -65,7 +73,7 @@ export const createPrompt = async ({ workspace, userId, title, body, tags }: Cre
       title,
       body,
       tags,
-      note: null,
+      note,
       created_by: userId,
       updated_by: userId,
     },
@@ -84,6 +92,39 @@ export const createPrompt = async ({ workspace, userId, title, body, tags }: Cre
   const row = data as PromptRow;
 
   return mapPromptRowToPrompt(row);
+};
+
+export type DuplicatePromptParams = {
+  workspace: Pick<Workspace, 'id' | 'type'>;
+  userId: string;
+  promptId: string;
+};
+
+export const duplicatePrompt = async ({ workspace, userId, promptId }: DuplicatePromptParams) => {
+  const { id: workspaceId } = workspace;
+
+  const { data: sourcePrompt, error: fetchError } = await supabase
+    .from('prompts')
+    .select('title,body,tags,note')
+    .eq('id', promptId)
+    .eq('workspace_id', workspaceId)
+    .is('deleted_at', null)
+    .single<PromptRow>();
+
+  if (fetchError) {
+    throw fetchError;
+  }
+
+  const original = sourcePrompt as PromptRow;
+
+  return createPrompt({
+    workspace,
+    userId,
+    title: original.title,
+    body: original.body,
+    tags: original.tags ?? [],
+    note: original.note ?? null,
+  });
 };
 
 export type UpdatePromptParams = {

@@ -8,7 +8,7 @@ import type { PostgrestError } from '@supabase/postgrest-js';
 import type { Prompt } from '@/domains/prompts/api/prompts';
 import type { PromptEditorDialogProps } from '../components/PromptEditorDialog';
 import { PromptsPage } from './PromptsPage';
-import { fetchPrompts, createPrompt, deletePrompt } from '@/domains/prompts/api/prompts';
+import { fetchPrompts, createPrompt, deletePrompt, duplicatePrompt } from '@/domains/prompts/api/prompts';
 import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimits';
 import { fetchPromptFavorite, togglePromptFavorite } from '@/domains/prompts/api/promptFavorites';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
@@ -24,6 +24,7 @@ vi.mock('@/domains/prompts/api/prompts', () => ({
   fetchPrompts: vi.fn(),
   createPrompt: vi.fn(),
   deletePrompt: vi.fn(),
+  duplicatePrompt: vi.fn(),
 }));
 
 vi.mock('@/domains/prompts/api/planLimits', () => ({
@@ -63,6 +64,7 @@ vi.mock('@tanstack/react-router', () => ({
 const fetchPromptsMock = vi.mocked(fetchPrompts);
 const createPromptMock = vi.mocked(createPrompt);
 const deletePromptMock = vi.mocked(deletePrompt);
+const duplicatePromptMock = vi.mocked(duplicatePrompt);
 const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
 const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
 const fetchPromptFavoriteMock = vi.mocked(fetchPromptFavorite);
@@ -244,6 +246,131 @@ describe('PromptsPage', () => {
 
     await screen.findByRole('heading', { level: 3, name: 'New prompt' });
     await screen.findByText('#summary');
+  });
+
+  it('duplicates a prompt and inserts the optimistic copy at the top', async () => {
+    fetchPromptsMock
+      .mockResolvedValueOnce([
+        {
+          id: 'prompt-1',
+          title: 'Prompt Alpha',
+          body: 'Generate a report.',
+          tags: ['report'],
+        },
+        {
+          id: 'prompt-2',
+          title: 'Prompt Beta',
+          body: 'Summarize the meeting notes.',
+          tags: ['meeting'],
+          note: 'Remember follow-up actions.',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'prompt-3',
+          title: 'Prompt Beta',
+          body: 'Summarize the meeting notes.',
+          tags: ['meeting'],
+          note: 'Remember follow-up actions.',
+        },
+        {
+          id: 'prompt-1',
+          title: 'Prompt Alpha',
+          body: 'Generate a report.',
+          tags: ['report'],
+        },
+        {
+          id: 'prompt-2',
+          title: 'Prompt Beta',
+          body: 'Summarize the meeting notes.',
+          tags: ['meeting'],
+          note: 'Remember follow-up actions.',
+        },
+      ]);
+    const user = userEvent.setup();
+    let resolveDuplicate: ((prompt: Prompt) => void) | null = null;
+
+    duplicatePromptMock.mockImplementation(() =>
+      new Promise<Prompt>((resolve) => {
+        resolveDuplicate = resolve;
+      }),
+    );
+
+    renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Beta' });
+
+    const listItems = screen.getAllByRole('listitem');
+    const betaRow = within(listItems[1]);
+
+    await user.click(betaRow.getByRole('button', { name: 'Duplicate prompt Prompt Beta' }));
+
+    expect(duplicatePromptMock).toHaveBeenCalledWith({
+      workspace: personalWorkspace,
+      userId: 'user-1',
+      promptId: 'prompt-2',
+    });
+
+    const optimisticListItems = screen.getAllByRole('listitem');
+    expect(within(optimisticListItems[0]).getByRole('heading', { level: 3, name: 'Prompt Beta' })).toBeInTheDocument();
+    expect(within(optimisticListItems[0]).getByText('(saving…)')).toBeInTheDocument();
+
+    if (!resolveDuplicate) {
+      throw new Error('Expected duplicate resolver to be defined.');
+    }
+
+    (resolveDuplicate as (prompt: Prompt) => void)({
+      id: 'prompt-3',
+      title: 'Prompt Beta',
+      body: 'Summarize the meeting notes.',
+      tags: ['meeting'],
+      note: 'Remember follow-up actions.',
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('(saving…)')).not.toBeInTheDocument();
+    });
+
+    const resolvedListItems = screen.getAllByRole('listitem');
+    expect(within(resolvedListItems[0]).getByRole('heading', { level: 3, name: 'Prompt Beta' })).toBeInTheDocument();
+    expect(within(resolvedListItems[0]).getByText('Note: Remember follow-up actions.')).toBeInTheDocument();
+    expect(within(resolvedListItems[1]).getByRole('heading', { level: 3, name: 'Prompt Alpha' })).toBeInTheDocument();
+  });
+
+  it('opens the upgrade dialog when duplicating exceeds plan limits', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['report'],
+      },
+    ]);
+    const user = userEvent.setup();
+    const planLimitError = {
+      code: 'P0001',
+      message: 'plan limit reached',
+      details: 'too many prompts',
+      hint: '',
+    } as unknown as PostgrestError;
+
+    duplicatePromptMock.mockRejectedValue(planLimitError);
+
+    renderPromptsPage();
+
+    const listItem = await screen.findByRole('listitem');
+    await user.click(within(listItem).getByRole('button', { name: 'Duplicate prompt Prompt Alpha' }));
+
+    await waitFor(() => {
+      expect(duplicatePromptMock).toHaveBeenCalled();
+    });
+
+    await screen.findByText('Upgrade to unlock more capacity');
+    await screen.findByText(/You have reached your prompt limit for this workspace/);
+    expect(screen.getByText(/too many prompts/)).toBeInTheDocument();
+    expect(screen.queryByText('(saving…)')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
   });
 
   it('toggles prompt favorites and filters the list', async () => {
