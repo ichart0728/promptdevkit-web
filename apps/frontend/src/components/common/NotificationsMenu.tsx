@@ -1,15 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { SVGProps } from 'react';
-
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/common/toast';
+import { router } from '@/app/router';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
 import type { NotificationItem } from '@/domains/notifications/types';
 import {
   countUnreadNotifications,
+  countUnreadMentionNotifications,
   flattenNotificationPages,
   getNotificationMessage,
   getNotificationTitle,
+  getMentionNavigationSearch,
+  isMentionNotification,
 } from '@/domains/notifications/utils';
 
 const BellIcon = (props: SVGProps<SVGSVGElement>) => (
@@ -36,6 +40,8 @@ type NotificationsMenuProps = {
 export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const menuId = useId();
+  const tooltipId = useId();
   const {
     data,
     error,
@@ -52,6 +58,10 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
   const notifications = useMemo(() => flattenNotificationPages(data?.pages), [data?.pages]);
 
   const unreadCount = useMemo(() => countUnreadNotifications(notifications), [notifications]);
+  const unreadMentionCount = useMemo(
+    () => countUnreadMentionNotifications(notifications),
+    [notifications],
+  );
 
   useEffect(() => {
     if (!isOpen) {
@@ -97,13 +107,37 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
     void refetch();
   }, [isOpen, isFetching, refetch]);
 
-  if (!userId) {
-    return null;
-  }
-
   const toggleMenu = () => {
     setIsOpen((previous) => !previous);
   };
+
+  const handleNavigateToMention = useCallback(
+    async (notification: NotificationItem) => {
+      if (!isMentionNotification(notification)) {
+        return;
+      }
+
+      const search = getMentionNavigationSearch(notification);
+
+      setIsOpen(false);
+
+      try {
+        await router.navigate({ to: '/prompts', search });
+
+        if (!notification.read_at) {
+          readMutation.mutate({ id: notification.id, read: true });
+        }
+      } catch (navigationError) {
+        toast({
+          title: 'Unable to open mention',
+          description:
+            navigationError instanceof Error ? navigationError.message : 'Try again in a moment.',
+        });
+        setIsOpen(true);
+      }
+    },
+    [readMutation],
+  );
 
   const handleToggleRead = (notification: NotificationItem) => {
     readMutation.mutate({ id: notification.id, read: !notification.read_at });
@@ -117,29 +151,61 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
     readMutation.mutateAll();
   };
 
-  const handleNavigateToPage = () => {
+  const handleNavigateToPage = async () => {
     setIsOpen(false);
+
+    try {
+      await router.navigate({ to: '/notifications' });
+    } catch (navigationError) {
+      toast({
+        title: 'Unable to open notifications',
+        description: navigationError instanceof Error ? navigationError.message : 'Try again in a moment.',
+      });
+      setIsOpen(true);
+    }
   };
+
+  if (!userId) {
+    return null;
+  }
 
   return (
     <div className="relative" ref={containerRef}>
-      <Button
-        aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
-        className="relative"
-        onClick={toggleMenu}
-        size="icon"
-        type="button"
-        variant="ghost"
-      >
-        <BellIcon className="h-5 w-5" />
-        {unreadCount > 0 ? (
-          <span className="absolute -right-1 -top-1 min-w-[1.25rem] rounded-full bg-destructive px-1 text-xs font-semibold leading-5 text-destructive-foreground">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        ) : null}
-      </Button>
+      <div className="group relative inline-flex">
+        <Button
+          aria-describedby={unreadCount > 0 ? tooltipId : undefined}
+          aria-expanded={isOpen}
+          aria-haspopup="true"
+          aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
+          aria-controls={isOpen ? menuId : undefined}
+          className="relative"
+          onClick={toggleMenu}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <BellIcon className="h-5 w-5" />
+          {unreadCount > 0 ? (
+            <span className="absolute -right-1 -top-1 min-w-[1.25rem] rounded-full bg-destructive px-1 text-xs font-semibold leading-5 text-destructive-foreground">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          ) : null}
+        </Button>
+        <span
+          id={tooltipId}
+          role="tooltip"
+          className="pointer-events-none absolute -bottom-10 left-1/2 z-20 w-max -translate-x-1/2 rounded bg-foreground px-2 py-1 text-xs text-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+        >
+          {unreadMentionCount > 0 ? `${unreadMentionCount} new mentions` : 'No new mentions'}
+        </span>
+      </div>
       {isOpen ? (
-        <div className="absolute right-0 z-10 mt-2 w-80 rounded-md border border-border bg-popover shadow-lg">
+        <div
+          className="absolute right-0 z-10 mt-2 w-80 rounded-md border border-border bg-popover shadow-lg"
+          id={menuId}
+          role="menu"
+          aria-label="Notifications menu"
+        >
           <div className="border-b border-border px-4 py-2">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-semibold text-foreground">Notifications</p>
@@ -180,7 +246,7 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
           ) : notifications.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">You're all caught up!</div>
           ) : (
-            <ul className="max-h-80 space-y-3 overflow-y-auto px-4 py-3 text-sm">
+            <ul className="max-h-80 space-y-3 overflow-y-auto px-4 py-3 text-sm" role="list">
               {notifications.map((notification) => {
                 const message = getNotificationMessage(notification);
                 const isRead = Boolean(notification.read_at);
@@ -198,18 +264,32 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
                           aria-hidden="true"
                         />
                       </div>
-                      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                        <time dateTime={notification.created_at}>
-                          {new Date(notification.created_at).toLocaleString()}
-                        </time>
-                        <Button
-                          disabled={readMutation.isPending}
-                          onClick={() => handleToggleRead(notification)}
-                          size="sm"
-                          variant="link"
-                        >
-                          {isRead ? 'Mark as unread' : 'Mark as read'}
-                        </Button>
+                      <div className="flex flex-col gap-2">
+                        {isMentionNotification(notification) ? (
+                          <div className="flex flex-wrap items-center justify-between gap-2" role="group">
+                            <Button
+                              onClick={() => void handleNavigateToMention(notification)}
+                              size="sm"
+                              type="button"
+                              variant="secondary"
+                            >
+                              Go to discussion
+                            </Button>
+                          </div>
+                        ) : null}
+                        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                          <time dateTime={notification.created_at}>
+                            {new Date(notification.created_at).toLocaleString()}
+                          </time>
+                          <Button
+                            disabled={readMutation.isPending}
+                            onClick={() => handleToggleRead(notification)}
+                            size="sm"
+                            variant="link"
+                          >
+                            {isRead ? 'Mark as unread' : 'Mark as read'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </li>
@@ -231,8 +311,8 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
             </div>
           ) : null}
           <div className={`px-4 py-2 ${hasNextPage ? 'border-t border-border' : ''}`}>
-            <Button asChild size="sm" variant="link" className="px-0" onClick={handleNavigateToPage}>
-              <a href="/notifications">View all</a>
+            <Button size="sm" variant="link" className="px-0" onClick={() => void handleNavigateToPage()}>
+              View all
             </Button>
           </div>
         </div>

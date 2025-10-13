@@ -689,7 +689,7 @@ export const PromptsPage = () => {
   };
 
   const handleFiltersSubmit = filtersForm.handleSubmit((values) => {
-    const parsedFilters = promptFiltersSubmitSchema.parse(values);
+    const parsedFilters: PromptFiltersSubmitValues = promptFiltersSubmitSchema.parse(values);
     void navigate({
       to: '.',
       search: (previous) => ({

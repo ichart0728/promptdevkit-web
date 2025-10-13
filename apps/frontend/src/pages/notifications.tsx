@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useRef } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/common/toast';
+import { router } from '@/app/router';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
+import type { NotificationItem } from '@/domains/notifications/types';
 import {
   countUnreadNotifications,
   flattenNotificationPages,
   getNotificationMessage,
   getNotificationTitle,
+  getMentionNavigationSearch,
+  isMentionNotification,
 } from '@/domains/notifications/utils';
 
 export const NotificationsPage = () => {
@@ -67,6 +72,27 @@ export const NotificationsPage = () => {
     }
 
     readMutation.mutateAll();
+  };
+
+  const handleNavigateToMention = async (notification: NotificationItem) => {
+    if (!isMentionNotification(notification)) {
+      return;
+    }
+
+    const search = getMentionNavigationSearch(notification);
+
+    try {
+      await router.navigate({ to: '/prompts', search });
+
+      if (!notification.read_at) {
+        readMutation.mutate({ id: notification.id, read: true });
+      }
+    } catch (navigationError) {
+      toast({
+        title: 'Unable to open mention',
+        description: navigationError instanceof Error ? navigationError.message : 'Try again in a moment.',
+      });
+    }
   };
 
   if (isSessionPending) {
@@ -138,7 +164,7 @@ export const NotificationsPage = () => {
         </div>
       ) : (
         <div className="space-y-4">
-          <ul className="space-y-4">
+          <ul className="space-y-4" role="list">
             {notifications.map((notification) => {
               const message = getNotificationMessage(notification);
               const isRead = Boolean(notification.read_at);
@@ -163,18 +189,32 @@ export const NotificationsPage = () => {
                         className={`flex h-2 w-2 shrink-0 rounded-full ${isRead ? 'bg-muted' : 'bg-primary'}`}
                       />
                     </div>
-                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-                      <time dateTime={notification.created_at}>
-                        {new Date(notification.created_at).toLocaleString()}
-                      </time>
-                      <Button
-                        disabled={readMutation.isPending}
-                        onClick={() => handleToggleRead(notification.id, isRead)}
-                        size="sm"
-                        variant="link"
-                      >
-                        {isRead ? 'Mark as unread' : 'Mark as read'}
-                      </Button>
+                    <div className="flex flex-col gap-3 text-xs text-muted-foreground">
+                      {isMentionNotification(notification) ? (
+                        <div className="flex flex-wrap items-center gap-2" role="group">
+                          <Button
+                            onClick={() => void handleNavigateToMention(notification)}
+                            size="sm"
+                            type="button"
+                            variant="secondary"
+                          >
+                            Go to discussion
+                          </Button>
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <time dateTime={notification.created_at}>
+                          {new Date(notification.created_at).toLocaleString()}
+                        </time>
+                        <Button
+                          disabled={readMutation.isPending}
+                          onClick={() => handleToggleRead(notification.id, isRead)}
+                          size="sm"
+                          variant="link"
+                        >
+                          {isRead ? 'Mark as unread' : 'Mark as read'}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </li>
