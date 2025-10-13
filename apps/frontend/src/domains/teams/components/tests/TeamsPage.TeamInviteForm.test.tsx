@@ -104,7 +104,7 @@ const renderInviteForm = (teamOverrides: BuildTeamOptions = {}) => {
   return { queryClient, team, ...renderResult };
 };
 
-describe('TeamInviteForm', () => {
+describe('TeamsPage / TeamInviteForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchPlanLimitsMock.mockResolvedValue(defaultPlanLimits);

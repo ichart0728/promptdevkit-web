@@ -5,6 +5,7 @@ import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { teamsQueryOptions } from '@/domains/teams/api/teams';
 import { TeamMemberActions } from '@/domains/teams/components/TeamMemberActions';
 import { TeamInviteForm } from '@/domains/teams/components/TeamInviteForm';
+import { TeamPlanUsageBanner } from '@/domains/teams/components/TeamPlanUsageBanner';
 import { workspacesQueryOptions } from '@/domains/workspaces/api/workspaces';
 
 const PLAN_LABELS: Record<string, string> = {
@@ -175,6 +176,9 @@ export const TeamsPage = () => {
                   {planLabel}
                 </span>
               </header>
+              <div className="border-b px-6 py-4">
+                <TeamPlanUsageBanner team={team} planLabel={planLabel} />
+              </div>
               <div className="grid gap-6 px-6 py-5 md:grid-cols-2">
                 <section aria-label={`${team.name} members`} className="space-y-3">
                   <h3 className="text-sm font-semibold uppercase text-muted-foreground">Members</h3>
