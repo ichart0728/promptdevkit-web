@@ -182,6 +182,10 @@ describe('TeamsPage', () => {
       expect(screen.getByText('Prompt Builders')).toBeInTheDocument();
     });
 
+    await waitFor(() => {
+      expect(screen.getByText('This team is using 2 of 5 member seats.')).toBeInTheDocument();
+    });
+
     expect(asFragment()).toMatchSnapshot();
   });
 });
