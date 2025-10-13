@@ -25,7 +25,14 @@ import {
 
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useActiveWorkspace } from '@/domains/workspaces/hooks/useActiveWorkspace';
-import { createPrompt, deletePrompt, fetchPrompts, promptsQueryKey, type Prompt } from '../api/prompts';
+import {
+  createPrompt,
+  deletePrompt,
+  duplicatePrompt,
+  fetchPrompts,
+  promptsQueryKey,
+  type Prompt,
+} from '../api/prompts';
 import { PromptEditorDialog } from '../components/PromptEditorDialog';
 import {
   fetchPlanLimits,
@@ -100,8 +107,10 @@ type DeleteOptimisticContext = {
 type PromptListItemRowProps = {
   prompt: PromptListItemData;
   onEdit: (prompt: PromptListItemData) => void;
+  onDuplicate: (prompt: PromptListItemData) => void;
   onDelete: (prompt: PromptListItemData) => void;
   disableDelete: boolean;
+  disableDuplicate: boolean;
   userId: string | null;
   workspaceId: string | null;
   promptsQueryKey: QueryKey;
@@ -111,8 +120,10 @@ type PromptListItemRowProps = {
 const PromptListItemRow = ({
   prompt,
   onEdit,
+  onDuplicate,
   onDelete,
   disableDelete,
+  disableDuplicate,
   userId,
   workspaceId,
   promptsQueryKey,
@@ -147,6 +158,16 @@ const PromptListItemRow = ({
               aria-label={`Edit prompt ${prompt.title}`}
             >
               Edit
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onDuplicate(prompt)}
+              disabled={prompt.isOptimistic || disableDuplicate}
+              aria-label={`Duplicate prompt ${prompt.title}`}
+            >
+              Duplicate
             </Button>
             <Button
               type="button"
@@ -447,6 +468,110 @@ export const PromptsPage = () => {
     },
   });
 
+  const duplicatePromptMutation = useMutation<Prompt, Error | PostgrestError, PromptListItemData, OptimisticContext>({
+    mutationFn: async (prompt) => {
+      if (prompt.isOptimistic) {
+        throw new Error('Cannot duplicate a prompt while it is still saving.');
+      }
+
+      if (!userId) {
+        throw new Error('You must be signed in to duplicate prompts.');
+      }
+
+      if (!workspaceId || !activeWorkspace) {
+        throw new Error('You must select a workspace before duplicating prompts.');
+      }
+
+      return duplicatePrompt({
+        workspace: activeWorkspace,
+        userId,
+        promptId: prompt.id,
+      });
+    },
+    onMutate: async (prompt) => {
+      if (!workspaceId) {
+        throw new Error('You must select a workspace before duplicating prompts.');
+      }
+
+      const mutationQueryKey = promptsQueryKey(workspaceId);
+
+      setCreatePromptError(null);
+
+      await queryClient.cancelQueries({ queryKey: mutationQueryKey });
+      const previousPrompts = queryClient.getQueryData<PromptListItemData[]>(mutationQueryKey) ?? [];
+      const optimisticId = `optimistic-duplicate-${Date.now()}`;
+      const optimisticPrompt: PromptListItemData = {
+        ...prompt,
+        id: optimisticId,
+        isOptimistic: true,
+      };
+
+      queryClient.setQueryData<PromptListItemData[]>(mutationQueryKey, [optimisticPrompt, ...previousPrompts]);
+
+      return { previousPrompts, optimisticId, queryKey: mutationQueryKey } satisfies OptimisticContext;
+    },
+    onError: (error, _prompt, context) => {
+      if (context) {
+        queryClient.setQueryData(context.queryKey, context.previousPrompts);
+      }
+
+      if (isPlanLimitError(error)) {
+        const planLimits = planLimitsQuery.data as PlanLimitMap | undefined;
+        const usage = context ? context.previousPrompts.length : prompts.length;
+
+        if (planLimits && planLimitKey) {
+          const evaluation = evaluateIntegerPlanLimit({
+            limits: planLimits,
+            key: planLimitKey,
+            currentUsage: usage,
+          });
+
+          setLastEvaluation(evaluation);
+        } else {
+          setLastEvaluation(null);
+        }
+
+        setUpgradeOpen(true);
+        setCreatePromptError(buildPlanLimitErrorMessage(error));
+        return;
+      }
+
+      setCreatePromptError(
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : 'Failed to duplicate prompt. Please try again.',
+      );
+      console.error(error);
+    },
+    onSuccess: (newPrompt, _variables, context) => {
+      if (!context) {
+        queryClient.invalidateQueries({ queryKey: promptsKey });
+        setCreatePromptError(null);
+        return;
+      }
+
+      queryClient.setQueryData<PromptListItemData[]>(context.queryKey, (current) => {
+        if (!current) {
+          return [newPrompt, ...context.previousPrompts];
+        }
+
+        return current.map((item) => (item.id === context.optimisticId ? { ...newPrompt } : item));
+      });
+
+      setCreatePromptError(null);
+      setUpgradeOpen(false);
+      setLastEvaluation(null);
+    },
+    onSettled: (_data, _error, _prompt, context) => {
+      if (context) {
+        queryClient.invalidateQueries({ queryKey: context.queryKey });
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: promptsKey });
+    },
+  });
+
   const deletePromptMutation = useMutation<string, Error, PromptListItemData, DeleteOptimisticContext>({
     mutationFn: async (prompt) => {
       if (prompt.isOptimistic) {
@@ -519,6 +644,50 @@ export const PromptsPage = () => {
     setEditorInitialThreadId(null);
     setPromptBeingEdited(prompt);
     setEditorOpen(true);
+  };
+
+  const handlePromptDuplicateClick = async (prompt: PromptListItemData) => {
+    if (prompt.isOptimistic) {
+      return;
+    }
+
+    if (!activeWorkspace || !workspaceId || !userId) {
+      return;
+    }
+
+    setCreatePromptError(null);
+
+    const planLimits = planLimitsQuery.data as PlanLimitMap | undefined;
+
+    if (!planLimits || !planLimitKey) {
+      setLastEvaluation(null);
+      return;
+    }
+
+    const currentUsageForEvaluation = (
+      queryClient.getQueryData<PromptListItemData[]>(promptsKey) ?? prompts
+    ).length;
+
+    const evaluation = evaluateIntegerPlanLimit({
+      limits: planLimits,
+      key: planLimitKey,
+      currentUsage: currentUsageForEvaluation,
+    });
+
+    setLastEvaluation(evaluation);
+
+    if (!evaluation.allowed) {
+      setUpgradeOpen(true);
+      return;
+    }
+
+    try {
+      await duplicatePromptMutation.mutateAsync(prompt);
+    } catch (error) {
+      if (!isPlanLimitError(error)) {
+        console.error(error);
+      }
+    }
   };
 
   const handleEditorOpenChange = (open: boolean) => {
@@ -916,8 +1085,10 @@ export const PromptsPage = () => {
               key={prompt.id}
               prompt={prompt}
               onEdit={handlePromptEditClick}
+              onDuplicate={handlePromptDuplicateClick}
               onDelete={handlePromptDeleteClick}
               disableDelete={deletePromptMutation.isPending}
+              disableDuplicate={duplicatePromptMutation.isPending}
               userId={userId}
               workspaceId={workspaceId}
               promptsQueryKey={promptsKey}
