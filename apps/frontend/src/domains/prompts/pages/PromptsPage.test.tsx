@@ -394,6 +394,48 @@ describe('PromptsPage', () => {
     await screen.findByRole('heading', { level: 3, name: 'Launch plan' });
   });
 
+  it('ignores empty filters and keeps all prompts visible', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Meeting summary',
+        body: 'Summarize weekly standups.',
+        tags: ['meeting', 'weekly'],
+      },
+      {
+        id: 'prompt-2',
+        title: 'Retro checklist',
+        body: 'Guide the team retrospective.',
+        tags: ['retro', 'team', 'weekly'],
+      },
+    ]);
+    const user = userEvent.setup();
+
+    const { router } = renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Meeting summary' });
+    await screen.findByRole('heading', { level: 3, name: 'Retro checklist' });
+
+    await user.type(screen.getByLabelText('Search prompts'), '   ');
+    await user.type(screen.getByLabelText('Filter tags'), ' , , ');
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+    });
+
+    await waitFor(() => {
+      expect(router.state.location.search).toEqual({});
+      expect(router.state.location.searchStr).toBe('');
+    });
+
+    await screen.findByRole('heading', { level: 3, name: 'Meeting summary' });
+    await screen.findByRole('heading', { level: 3, name: 'Retro checklist' });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Search prompts')).toHaveValue('');
+      expect(screen.getByLabelText('Filter tags')).toHaveValue('');
+    });
+  });
+
   it('restores filters from the URL on load', async () => {
     fetchPromptsMock.mockResolvedValue([
       {

@@ -265,6 +265,7 @@ export const PromptsPage = () => {
     () => (searchParams.tags ?? []).map((tag) => tag.trim()).filter((tag) => tag.length > 0),
     [searchParams.tags],
   );
+  const searchTagsInputValue = React.useMemo(() => searchTags.join(', '), [searchTags]);
   const normalizedSearchQuery = React.useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
   const normalizedSearchTags = React.useMemo(
     () => searchTags.map((tag) => tag.toLowerCase()),
@@ -579,7 +580,7 @@ export const PromptsPage = () => {
     resolver: zodResolver(promptFiltersSchema),
     defaultValues: {
       q: searchQuery,
-      tagsInput: searchTags.join(', '),
+      tagsInput: searchTagsInputValue,
       tags: searchTags,
     },
   });
@@ -587,10 +588,10 @@ export const PromptsPage = () => {
   React.useEffect(() => {
     filtersForm.reset({
       q: searchQuery,
-      tagsInput: searchTags.join(', '),
+      tagsInput: searchTagsInputValue,
       tags: searchTags,
     });
-  }, [filtersForm, searchQuery, searchTags]);
+  }, [filtersForm, searchQuery, searchTags, searchTagsInputValue]);
 
   React.useEffect(() => {
     if (!workspaceId || !userId) {
@@ -667,13 +668,19 @@ export const PromptsPage = () => {
 
   const handleFiltersSubmit = filtersForm.handleSubmit((values) => {
     const nextSearch: { q?: string; tags?: string[] } = {};
+    const hasQuery = values.q.length > 0;
+    const hasTags = values.tags.length > 0;
 
-    if (values.q.length > 0) {
+    if (hasQuery) {
       nextSearch.q = values.q;
     }
 
-    if (values.tags.length > 0) {
+    if (hasTags) {
       nextSearch.tags = values.tags;
+    }
+
+    if (!hasQuery && !hasTags) {
+      filtersForm.reset({ q: '', tagsInput: '', tags: [] });
     }
 
     void navigate({ search: nextSearch, replace: true });
