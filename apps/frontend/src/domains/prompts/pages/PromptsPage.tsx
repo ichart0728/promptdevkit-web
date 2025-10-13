@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { PostgrestError } from '@supabase/postgrest-js';
 import * as React from 'react';
 import { useForm } from 'react-hook-form';
@@ -50,6 +51,27 @@ const promptSchema = z.object({
 });
 
 export type PromptFormValues = z.infer<typeof promptSchema>;
+
+const MAX_FILTER_INPUT_LENGTH = 200;
+
+const promptFiltersFieldSchema = z.object({
+  q: z
+    .string()
+    .max(MAX_FILTER_INPUT_LENGTH, `Search must be ${MAX_FILTER_INPUT_LENGTH} characters or fewer`)
+    .optional(),
+  tags: z
+    .string()
+    .max(MAX_FILTER_INPUT_LENGTH, `Tags filter must be ${MAX_FILTER_INPUT_LENGTH} characters or fewer`)
+    .optional(),
+});
+
+const promptFiltersSubmitSchema = promptFiltersFieldSchema.transform(({ q, tags }) => ({
+  q: q?.trim() ?? '',
+  tags: formatTags(tags),
+}));
+
+type PromptFiltersFieldValues = z.infer<typeof promptFiltersFieldSchema>;
+type PromptFiltersSubmitValues = z.infer<typeof promptFiltersSubmitSchema>;
 
 type PromptListItemData = Prompt & { isOptimistic?: boolean; isFavorite?: boolean };
 
@@ -212,6 +234,8 @@ export const PromptsPage = () => {
   const queryClient = useQueryClient();
   const sessionQuery = useSessionQuery();
   const activeWorkspace = useActiveWorkspace();
+  const navigate = useNavigate({ from: '/prompts' });
+  const searchParams = useSearch({ from: '/prompts' }) as { q?: string; tags?: string[] | string };
   const [simulateError, setSimulateError] = React.useState(false);
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
@@ -543,6 +567,33 @@ export const PromptsPage = () => {
   const promptIds = React.useMemo(() => prompts.map((prompt) => prompt.id), [prompts]);
   const promptIdsSignature = React.useMemo(() => promptIds.join(','), [promptIds]);
 
+  const rawSearchQuery = typeof searchParams?.q === 'string' ? searchParams.q : '';
+  const rawSearchTags = searchParams?.tags;
+  const searchTags = React.useMemo(() => {
+    if (Array.isArray(rawSearchTags)) {
+      return rawSearchTags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0);
+    }
+
+    if (typeof rawSearchTags === 'string') {
+      return formatTags(rawSearchTags);
+    }
+
+    return [];
+  }, [rawSearchTags]);
+  const searchTagsInputValue = React.useMemo(() => searchTags.join(', '), [searchTags]);
+
+  const filtersForm = useForm<PromptFiltersFieldValues>({
+    resolver: zodResolver(promptFiltersFieldSchema),
+    defaultValues: {
+      q: rawSearchQuery,
+      tags: searchTagsInputValue,
+    },
+  });
+
+  React.useEffect(() => {
+    filtersForm.reset({ q: rawSearchQuery, tags: searchTagsInputValue });
+  }, [filtersForm, rawSearchQuery, searchTagsInputValue]);
+
   React.useEffect(() => {
     if (!workspaceId || !userId) {
       return;
@@ -588,10 +639,46 @@ export const PromptsPage = () => {
   }, [favoritesMap, prompts]);
   const shouldFilterFavorites = showFavoritesOnly && favoritesQuery.status !== 'error';
   const favoritesFilterLabel = showFavoritesOnly ? 'Show all prompts' : 'Show favorites only';
-  const visiblePrompts = React.useMemo(
-    () => (shouldFilterFavorites ? promptsWithFavorites.filter((prompt) => prompt.isFavorite) : promptsWithFavorites),
-    [promptsWithFavorites, shouldFilterFavorites],
-  );
+  const normalizedSearchQuery = React.useMemo(() => rawSearchQuery.trim().toLowerCase(), [rawSearchQuery]);
+  const normalizedTagFilters = React.useMemo(() => searchTags.map((tag) => tag.toLowerCase()), [searchTags]);
+  const hasSearchQuery = normalizedSearchQuery.length > 0;
+  const hasTagFilters = normalizedTagFilters.length > 0;
+  const filteredPrompts = React.useMemo(() => {
+    let result = promptsWithFavorites;
+
+    if (hasSearchQuery) {
+      result = result.filter((prompt) => {
+        const titleMatches = prompt.title.toLowerCase().includes(normalizedSearchQuery);
+        const tagMatches = prompt.tags.some((tag) => tag.toLowerCase().includes(normalizedSearchQuery));
+        return titleMatches || tagMatches;
+      });
+    }
+
+    if (hasTagFilters) {
+      result = result.filter((prompt) => {
+        if (prompt.tags.length === 0) {
+          return false;
+        }
+
+        const promptTags = prompt.tags.map((tag) => tag.toLowerCase());
+        return normalizedTagFilters.every((tag) => promptTags.includes(tag));
+      });
+    }
+
+    if (shouldFilterFavorites) {
+      result = result.filter((prompt) => prompt.isFavorite);
+    }
+
+    return result;
+  }, [
+    hasSearchQuery,
+    hasTagFilters,
+    normalizedSearchQuery,
+    normalizedTagFilters,
+    promptsWithFavorites,
+    shouldFilterFavorites,
+  ]);
+  const hasActiveFilters = hasSearchQuery || hasTagFilters;
   const currentUsage = prompts.length;
 
   const handleUpgradeDialogChange = (open: boolean) => {
@@ -599,6 +686,32 @@ export const PromptsPage = () => {
     if (!open) {
       setLastEvaluation(null);
     }
+  };
+
+  const handleFiltersSubmit = filtersForm.handleSubmit((values) => {
+    const parsedFilters = promptFiltersSubmitSchema.parse(values);
+    void navigate({
+      to: '.',
+      search: (previous) => ({
+        ...previous,
+        q: parsedFilters.q.length > 0 ? parsedFilters.q : undefined,
+        tags: parsedFilters.tags.length > 0 ? parsedFilters.tags : undefined,
+      }),
+      replace: true,
+    });
+  });
+
+  const handleFiltersReset = () => {
+    filtersForm.reset({ q: '', tags: '' });
+    void navigate({
+      to: '.',
+      search: (previous) => ({
+        ...previous,
+        q: undefined,
+        tags: undefined,
+      }),
+      replace: true,
+    });
   };
 
   const handleSubmit = form.handleSubmit(async (values) => {
@@ -693,10 +806,20 @@ export const PromptsPage = () => {
       return <div className="rounded-md border border-dashed p-6 text-sm">Loading favorite prompts…</div>;
     }
 
-    if (shouldFilterFavorites && visiblePrompts.length === 0) {
+    if (shouldFilterFavorites && filteredPrompts.length === 0 && !hasActiveFilters) {
       return (
         <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
           No favorite prompts yet. Toggle favorites to curate this list or disable the filter to see all prompts.
+        </div>
+      );
+    }
+
+    if (filteredPrompts.length === 0 && (hasActiveFilters || shouldFilterFavorites)) {
+      return (
+        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+          {shouldFilterFavorites
+            ? 'No favorite prompts match your filters. Adjust your search terms, clear tag filters, or disable the favorites filter.'
+            : 'No prompts match your filters. Adjust your search terms or clear the tag filters to see more results.'}
         </div>
       );
     }
@@ -709,7 +832,7 @@ export const PromptsPage = () => {
           </div>
         ) : null}
         <ul className="space-y-3">
-          {visiblePrompts.map((prompt) => (
+          {filteredPrompts.map((prompt) => (
             <PromptListItemRow
               key={prompt.id}
               prompt={prompt}
@@ -1001,6 +1124,45 @@ export const PromptsPage = () => {
             </Button>
           </div>
         </div>
+        <form onSubmit={handleFiltersSubmit} className="flex flex-col gap-3 rounded-md border bg-card/40 p-3 sm:flex-row sm:items-end">
+          <div className="flex-1 space-y-2">
+            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="prompts-search">
+              Search
+            </label>
+            <Input
+              id="prompts-search"
+              type="search"
+              placeholder="Search by title or tag"
+              {...filtersForm.register('q')}
+            />
+            {filtersForm.formState.errors.q ? (
+              <p className="text-xs text-destructive">{filtersForm.formState.errors.q.message}</p>
+            ) : null}
+          </div>
+          <div className="flex-1 space-y-2">
+            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="prompts-tags">
+              Tags (comma separated)
+            </label>
+            <Input id="prompts-tags" placeholder="meeting, summary" {...filtersForm.register('tags')} />
+            {filtersForm.formState.errors.tags ? (
+              <p className="text-xs text-destructive">{filtersForm.formState.errors.tags.message}</p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <Button type="submit" size="sm">
+              Apply filters
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleFiltersReset}
+              disabled={!hasSearchQuery && !hasTagFilters}
+            >
+              Clear filters
+            </Button>
+          </div>
+        </form>
         {renderPrompts()}
       </div>
       </div>

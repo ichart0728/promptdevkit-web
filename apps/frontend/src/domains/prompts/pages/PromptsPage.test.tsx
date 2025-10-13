@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { vi } from 'vitest';
 import type { PostgrestError } from '@supabase/postgrest-js';
 
@@ -48,6 +49,11 @@ vi.mock('@/domains/workspaces/hooks/useActiveWorkspace', () => ({
   useActiveWorkspace: vi.fn(),
 }));
 
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: vi.fn(),
+  useNavigate: vi.fn(),
+}));
+
 const fetchPromptsMock = vi.mocked(fetchPrompts);
 const createPromptMock = vi.mocked(createPrompt);
 const deletePromptMock = vi.mocked(deletePrompt);
@@ -57,6 +63,8 @@ const fetchPromptFavoriteMock = vi.mocked(fetchPromptFavorite);
 const togglePromptFavoriteMock = vi.mocked(togglePromptFavorite);
 const useSessionQueryMock = vi.mocked(useSessionQuery);
 const useActiveWorkspaceMock = vi.mocked(useActiveWorkspace);
+const useSearchMock = vi.mocked(useSearch);
+const useNavigateMock = vi.mocked(useNavigate);
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -104,6 +112,9 @@ const teamWorkspace = {
 };
 
 let activeWorkspaceRef: { current: typeof personalWorkspace | typeof teamWorkspace | null };
+let currentSearchState: { q?: string; tags?: string[] };
+type NavigateOptions = Parameters<ReturnType<typeof useNavigate>>[0];
+let navigateSpy: ReturnType<typeof vi.fn<[NavigateOptions], Promise<void>>>;
 
 describe('PromptsPage', () => {
   beforeEach(() => {
@@ -129,6 +140,10 @@ describe('PromptsPage', () => {
     });
     fetchPromptFavoriteMock.mockResolvedValue(null);
     togglePromptFavoriteMock.mockResolvedValue(null);
+    currentSearchState = {};
+    useSearchMock.mockImplementation(() => currentSearchState);
+    navigateSpy = vi.fn<[NavigateOptions], Promise<void>>(async () => {});
+    useNavigateMock.mockReturnValue(navigateSpy as unknown as ReturnType<typeof useNavigate>);
   });
 
   afterEach(() => {
@@ -302,6 +317,122 @@ describe('PromptsPage', () => {
         screen.getByRole('button', { name: 'Toggle favorite for prompt Prompt Beta' }),
       ).toHaveAttribute('aria-pressed', 'false');
     });
+  });
+
+  it('submits search filters and updates the router search params', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['report'],
+      },
+      {
+        id: 'prompt-2',
+        title: 'Prompt Beta',
+        body: 'Summarize the meeting notes.',
+        tags: ['meeting', 'summary'],
+      },
+    ]);
+    const user = userEvent.setup();
+
+    renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
+
+    await user.type(screen.getByLabelText('Search'), ' Prompt Beta ');
+    await user.type(screen.getByLabelText('Tags (comma separated)'), 'meeting, summary');
+
+    await user.click(screen.getByRole('button', { name: 'Apply filters' }));
+
+    expect(navigateSpy).toHaveBeenCalled();
+    const navigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
+    expect(navigateArgument).toMatchObject({ to: '.', replace: true });
+    if (!navigateArgument || typeof navigateArgument.search !== 'function') {
+      throw new Error('Expected navigate search reducer to be a function.');
+    }
+    expect(navigateArgument.search({})).toEqual({ q: 'Prompt Beta', tags: ['meeting', 'summary'] });
+  });
+
+  it('clears search filters via the reset action', async () => {
+    currentSearchState = { q: 'initial', tags: ['focus'] };
+    useSearchMock.mockImplementation(() => currentSearchState);
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['focus'],
+      },
+    ]);
+    const user = userEvent.setup();
+
+    renderPromptsPage();
+
+    await screen.findByText(
+      'No prompts match your filters. Adjust your search terms or clear the tag filters to see more results.',
+    );
+    expect(screen.getByLabelText('Search')).toHaveValue('initial');
+    expect(screen.getByLabelText('Tags (comma separated)')).toHaveValue('focus');
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    const navigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
+    expect(navigateArgument).toMatchObject({ to: '.', replace: true });
+    if (!navigateArgument || typeof navigateArgument.search !== 'function') {
+      throw new Error('Expected navigate search reducer to be a function.');
+    }
+    expect(navigateArgument.search({ q: 'initial', tags: ['focus'] })).toEqual({ q: undefined, tags: undefined });
+  });
+
+  it('filters prompts by search query and tags from the router state', async () => {
+    currentSearchState = { q: 'beta', tags: ['meeting', 'summary'] };
+    useSearchMock.mockImplementation(() => currentSearchState);
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['report'],
+      },
+      {
+        id: 'prompt-2',
+        title: 'Prompt Beta',
+        body: 'Summarize the meeting notes.',
+        tags: ['meeting', 'summary'],
+      },
+      {
+        id: 'prompt-3',
+        title: 'Prompt Gamma',
+        body: 'Draft a welcome email.',
+        tags: ['welcome', 'summary'],
+      },
+    ]);
+
+    renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Beta' });
+    expect(screen.queryByRole('heading', { level: 3, name: 'Prompt Alpha' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 3, name: 'Prompt Gamma' })).not.toBeInTheDocument();
+  });
+
+  it('shows an empty filtered state when no prompts match the filters', async () => {
+    currentSearchState = { q: 'delta', tags: ['nonexistent'] };
+    useSearchMock.mockImplementation(() => currentSearchState);
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['report'],
+      },
+    ]);
+
+    renderPromptsPage();
+
+    await screen.findByText(
+      'No prompts match your filters. Adjust your search terms or clear the tag filters to see more results.',
+    );
   });
 
   it('recommends an upgrade when the prompt limit is reached', async () => {
