@@ -113,6 +113,7 @@ const buildSupabasePlanLimitMessage = (error: SupabasePlanLimitError) =>
 export type PromptCommentsPanelProps = {
   promptId: string | null;
   userId: string | null;
+  initialThreadId?: string | null;
 };
 
 type CommentFormValues = z.infer<typeof commentFormSchema>;
@@ -136,7 +137,11 @@ type UpdateOptimisticContext = {
   queryKey: ReturnType<typeof commentThreadCommentsQueryKey>;
 };
 
-export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelProps) => {
+export const PromptCommentsPanel = ({
+  promptId,
+  userId,
+  initialThreadId = null,
+}: PromptCommentsPanelProps) => {
   const queryClient = useQueryClient();
   const [activeThreadId, setActiveThreadId] = React.useState<string | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
@@ -147,6 +152,7 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
   const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
   const [editingDraft, setEditingDraft] = React.useState('');
   const [editingError, setEditingError] = React.useState<string | null>(null);
+  const appliedInitialThreadIdRef = React.useRef<string | null>(null);
 
   const commentForm = useForm<CommentFormValues>({
     resolver: zodResolver(commentFormSchema),
@@ -170,6 +176,7 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
     setEditingCommentId(null);
     setEditingDraft('');
     setEditingError(null);
+    appliedInitialThreadIdRef.current = null;
   }, [promptId, commentForm, threadForm]);
 
   const userPlanQuery = useQuery({
@@ -296,6 +303,22 @@ export const PromptCommentsPanel = ({ promptId, userId }: PromptCommentsPanelPro
     () => commentsQuery.data?.pages.flat() ?? [],
     [commentsQuery.data],
   );
+
+  React.useEffect(() => {
+    if (!initialThreadId) {
+      appliedInitialThreadIdRef.current = null;
+      return;
+    }
+
+    if (appliedInitialThreadIdRef.current === initialThreadId) {
+      return;
+    }
+
+    if (threads.some((thread) => thread.id === initialThreadId)) {
+      setActiveThreadId(initialThreadId);
+      appliedInitialThreadIdRef.current = initialThreadId;
+    }
+  }, [initialThreadId, threads]);
 
   React.useEffect(() => {
     if (!threads.length) {

@@ -6,6 +6,7 @@ import { vi } from 'vitest';
 import type { PostgrestError } from '@supabase/postgrest-js';
 
 import type { Prompt } from '@/domains/prompts/api/prompts';
+import type { PromptEditorDialogProps } from '../components/PromptEditorDialog';
 import { PromptsPage } from './PromptsPage';
 import { fetchPrompts, createPrompt, deletePrompt } from '@/domains/prompts/api/prompts';
 import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimits';
@@ -38,8 +39,13 @@ vi.mock('@/domains/prompts/api/promptFavorites', () => ({
   togglePromptFavorite: vi.fn(),
 }));
 
+let lastPromptEditorDialogProps: PromptEditorDialogProps | null = null;
+
 vi.mock('../components/PromptEditorDialog', () => ({
-  PromptEditorDialog: () => null,
+  PromptEditorDialog: (props: PromptEditorDialogProps) => {
+    lastPromptEditorDialogProps = props;
+    return null;
+  },
 }));
 
 vi.mock('@/domains/auth/hooks/useSessionQuery', () => ({
@@ -112,7 +118,7 @@ const teamWorkspace = {
 };
 
 let activeWorkspaceRef: { current: typeof personalWorkspace | typeof teamWorkspace | null };
-let currentSearchState: { q?: string; tags?: string[] };
+let currentSearchState: { q?: string; tags?: string[]; promptId?: string; threadId?: string };
 type NavigateOptions = Parameters<ReturnType<typeof useNavigate>>[0];
 let navigateSpy: ReturnType<typeof vi.fn<[NavigateOptions], Promise<void>>>;
 
@@ -144,6 +150,7 @@ describe('PromptsPage', () => {
     useSearchMock.mockImplementation(() => currentSearchState);
     navigateSpy = vi.fn<[NavigateOptions], Promise<void>>(async () => {});
     useNavigateMock.mockReturnValue(navigateSpy as unknown as ReturnType<typeof useNavigate>);
+    lastPromptEditorDialogProps = null;
   });
 
   afterEach(() => {
@@ -351,7 +358,12 @@ describe('PromptsPage', () => {
     if (!navigateArgument || typeof navigateArgument.search !== 'function') {
       throw new Error('Expected navigate search reducer to be a function.');
     }
-    expect(navigateArgument.search({})).toEqual({ q: 'Prompt Beta', tags: ['meeting', 'summary'] });
+    expect(navigateArgument.search({})).toEqual({
+      q: 'Prompt Beta',
+      tags: ['meeting', 'summary'],
+      promptId: undefined,
+      threadId: undefined,
+    });
   });
 
   it('clears search filters via the reset action', async () => {
@@ -382,7 +394,50 @@ describe('PromptsPage', () => {
     if (!navigateArgument || typeof navigateArgument.search !== 'function') {
       throw new Error('Expected navigate search reducer to be a function.');
     }
-    expect(navigateArgument.search({ q: 'initial', tags: ['focus'] })).toEqual({ q: undefined, tags: undefined });
+    expect(navigateArgument.search({ q: 'initial', tags: ['focus'] })).toEqual({
+      q: undefined,
+      tags: undefined,
+      promptId: undefined,
+      threadId: undefined,
+    });
+  });
+
+  it('opens the prompt editor to the discussion tab when mention params are present', async () => {
+    currentSearchState = { promptId: 'prompt-7', threadId: 'thread-3' };
+    useSearchMock.mockImplementation(() => currentSearchState);
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-7',
+        title: 'Mentioned prompt',
+        body: 'Review this mention.',
+        tags: ['discussion'],
+      },
+    ]);
+
+    renderPromptsPage();
+
+    await waitFor(() => {
+      expect(lastPromptEditorDialogProps?.open).toBe(true);
+    });
+
+    expect(lastPromptEditorDialogProps).toMatchObject({
+      initialTab: 'discussion',
+      initialThreadId: 'thread-3',
+    });
+    expect(lastPromptEditorDialogProps?.prompt).toMatchObject({ id: 'prompt-7' });
+
+    const navigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
+    expect(navigateArgument).toMatchObject({ to: '.', replace: true });
+    if (!navigateArgument || typeof navigateArgument.search !== 'function') {
+      throw new Error('Expected navigate search reducer to be a function.');
+    }
+
+    expect(navigateArgument.search(currentSearchState)).toEqual({
+      promptId: undefined,
+      threadId: undefined,
+      q: undefined,
+      tags: undefined,
+    });
   });
 
   it('filters prompts by search query and tags from the router state', async () => {

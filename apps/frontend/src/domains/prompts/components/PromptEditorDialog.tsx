@@ -49,12 +49,14 @@ const formatTimestamp = (timestamp: string) => {
   }
 };
 
-type PromptEditorDialogProps = {
+export type PromptEditorDialogProps = {
   open: boolean;
   prompt: Prompt | null;
   workspace: Pick<Workspace, 'id' | 'type'> | null;
   userId: string | null;
   onOpenChange: (open: boolean) => void;
+  initialTab?: 'edit' | 'history' | 'discussion';
+  initialThreadId?: string | null;
 };
 
 export const PromptEditorDialog = ({
@@ -63,9 +65,11 @@ export const PromptEditorDialog = ({
   workspace,
   userId,
   onOpenChange,
+  initialTab = 'edit',
+  initialThreadId = null,
 }: PromptEditorDialogProps) => {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = React.useState<'edit' | 'history' | 'discussion'>('edit');
+  const [activeTab, setActiveTab] = React.useState<'edit' | 'history' | 'discussion'>(initialTab);
   const [serverError, setServerError] = React.useState<string | null>(null);
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
 
@@ -90,10 +94,10 @@ export const PromptEditorDialog = ({
       tags: prompt.tags.join(', '),
       note: prompt.note ?? '',
     });
-    setActiveTab('edit');
+    setActiveTab(initialTab);
     setServerError(null);
     setSuccessMessage(null);
-  }, [form, open, prompt]);
+  }, [form, open, prompt, initialTab]);
 
   const promptId = prompt?.id ?? null;
   const promptVersionsQuery = useQuery({
@@ -459,7 +463,11 @@ export const PromptEditorDialog = ({
           hidden={activeTab !== 'discussion'}
         >
           {activeTab === 'discussion' ? (
-            <PromptCommentsPanel promptId={promptId} userId={userId} />
+            <PromptCommentsPanel
+              promptId={promptId}
+              userId={userId}
+              initialThreadId={initialThreadId}
+            />
           ) : null}
         </div>
       </DialogContent>
