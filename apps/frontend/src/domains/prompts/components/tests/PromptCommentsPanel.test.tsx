@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { vi } from 'vitest';
@@ -16,6 +16,7 @@ import {
   type CommentThread,
 } from '../../api/promptComments';
 import { fetchPlanLimits, fetchUserPlanId } from '../../api/planLimits';
+import { useCommentMentionSuggestions } from '../../hooks/useCommentMentionSuggestions';
 import type * as ToastModule from '@/components/common/toast';
 
 vi.mock('../../api/promptComments', () => ({
@@ -67,6 +68,10 @@ vi.mock('@/components/common/toast', () => ({
   toast: (...args: Parameters<typeof ToastModule.toast>) => toastMock(...args),
 }));
 
+vi.mock('../../hooks/useCommentMentionSuggestions', () => ({
+  useCommentMentionSuggestions: vi.fn(),
+}));
+
 const fetchPromptCommentThreadsMock = vi.mocked(fetchPromptCommentThreads);
 const fetchThreadCommentsMock = vi.mocked(fetchThreadComments);
 const createCommentMock = vi.mocked(createComment);
@@ -75,6 +80,7 @@ const deleteCommentMock = vi.mocked(deleteComment);
 const updateCommentMock = vi.mocked(updateComment);
 const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
 const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
+const useCommentMentionSuggestionsMock = vi.mocked(useCommentMentionSuggestions);
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -88,6 +94,7 @@ const createTestQueryClient = () =>
 type RenderPanelOptions = {
   promptId?: string | null;
   userId?: string | null;
+  workspaceId?: string | null;
 };
 
 const defaultThread: CommentThread = {
@@ -108,14 +115,18 @@ const defaultComment: Comment = {
   updatedAt: '2024-05-01T00:00:00.000Z',
 };
 
-const renderPanel = ({ promptId = 'prompt-1', userId = 'user-1' }: RenderPanelOptions = {}) => {
+const renderPanel = ({
+  promptId = 'prompt-1',
+  userId = 'user-1',
+  workspaceId = 'workspace-1',
+}: RenderPanelOptions = {}) => {
   const queryClient = createTestQueryClient();
   const user = userEvent.setup();
   const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
   const renderResult = render(
     <QueryClientProvider client={queryClient}>
-      <PromptCommentsPanel promptId={promptId} userId={userId} />
+      <PromptCommentsPanel promptId={promptId} userId={userId} workspaceId={workspaceId} />
     </QueryClientProvider>,
   );
 
@@ -139,6 +150,17 @@ describe('PromptCommentsPanel - thread creation', () => {
     createCommentMock.mockResolvedValue({} as Comment);
     deleteCommentMock.mockResolvedValue('comment-1');
     updateCommentMock.mockResolvedValue(defaultComment);
+    useCommentMentionSuggestionsMock.mockImplementation(
+      () =>
+        ({
+          data: [],
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+          error: null,
+          refetch: vi.fn(),
+        }) as never,
+    );
   });
 
   afterEach(() => {
@@ -171,6 +193,7 @@ describe('PromptCommentsPanel - thread creation', () => {
       expect(createCommentThreadMock).toHaveBeenCalledWith({
         promptId: 'prompt-1',
         body: 'Launch discussion thread',
+        mentions: [],
       });
     });
 
@@ -289,6 +312,17 @@ describe('PromptCommentsPanel - comment editing', () => {
       updatedAt: '2024-05-02T00:00:00.000Z',
     });
     deleteCommentMock.mockResolvedValue('comment-1');
+    useCommentMentionSuggestionsMock.mockImplementation(
+      () =>
+        ({
+          data: [],
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+          error: null,
+          refetch: vi.fn(),
+        }) as never,
+    );
   });
 
   afterEach(() => {
@@ -400,6 +434,166 @@ describe('PromptCommentsPanel - comment editing', () => {
   });
 });
 
+describe('PromptCommentsPanel - mentions', () => {
+  const teammateSuggestion = {
+    id: 'user-2',
+    name: 'Alex Example',
+    email: 'alex@example.com',
+    avatarUrl: null,
+  } as const;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchPromptCommentThreadsMock.mockResolvedValue([defaultThread]);
+    fetchThreadCommentsMock.mockResolvedValue([] as Comment[]);
+    fetchUserPlanIdMock.mockResolvedValue('plan-free');
+    fetchPlanLimitsMock.mockResolvedValue({
+      comment_threads_per_prompt: {
+        key: 'comment_threads_per_prompt',
+        value_int: 5,
+        value_str: null,
+        value_json: null,
+      },
+    });
+    createCommentThreadMock.mockResolvedValue({
+      ...defaultThread,
+      id: 'thread-2',
+      createdAt: '2024-05-02T00:00:00.000Z',
+    });
+    createCommentMock.mockResolvedValue({
+      ...defaultComment,
+      id: 'comment-2',
+      body: 'Hello teammates',
+      mentions: ['user-2'],
+      createdAt: '2024-05-02T00:00:00.000Z',
+      updatedAt: '2024-05-02T00:00:00.000Z',
+    });
+    deleteCommentMock.mockResolvedValue('comment-1');
+    updateCommentMock.mockResolvedValue(defaultComment);
+    useCommentMentionSuggestionsMock.mockImplementation((params) =>
+      ({
+        data: params?.search ? [teammateSuggestion] : [],
+        isLoading: false,
+        isFetching: false,
+        isError: false,
+        error: null,
+        refetch: vi.fn(),
+      }) as never,
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('submits a comment with mentions and keeps them during the optimistic update', async () => {
+    const { user, queryClient } = renderPanel();
+
+    const commentTextarea = await screen.findByLabelText('Add a comment');
+    const mentionInputs = screen.getAllByLabelText('Mention teammates (optional)');
+    const commentMentionInput = mentionInputs[1] as HTMLInputElement;
+
+    await waitFor(() => {
+      expect(commentMentionInput).not.toBeDisabled();
+    });
+
+    await user.type(commentMentionInput, '@alex');
+
+    const mentionOption = await screen.findByRole('option', { name: /Alex Example/i });
+    const mentionOptionButton = within(mentionOption).getByRole('button', { name: /Alex Example/i });
+    await user.click(mentionOptionButton);
+
+    await waitFor(() => {
+      expect(screen.getByText('Alex Example')).toBeInTheDocument();
+    });
+
+    await user.type(commentTextarea, 'Hello teammates  ');
+
+    createCommentMock.mockImplementation(async (params) => {
+      const mentions = params.mentions ?? [];
+      const cached = queryClient.getQueryData<InfiniteData<Comment[]>>([
+        'prompt-comments',
+        'prompt-1',
+        'threads',
+        'thread-1',
+        'comments',
+        { offset: 0, limit: 50 },
+      ]);
+
+      const optimisticComment = cached?.pages?.[0]?.slice(-1)?.[0];
+      expect(optimisticComment?.mentions).toEqual(['user-2']);
+
+      return {
+        ...defaultComment,
+        id: 'comment-2',
+        threadId: 'thread-1',
+        body: params.body,
+        mentions,
+        createdAt: '2024-05-02T00:00:00.000Z',
+        updatedAt: '2024-05-02T00:00:00.000Z',
+      } satisfies Comment;
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Post comment' }));
+
+    await waitFor(() => {
+      expect(createCommentMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        threadId: 'thread-1',
+        userId: 'user-1',
+        body: 'Hello teammates',
+        mentions: ['user-2'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(commentMentionInput).toHaveValue('');
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('comment-mentions-selected')).not.toBeInTheDocument();
+    });
+  });
+
+  it('submits a thread with mentions', async () => {
+    const { user } = renderPanel();
+
+    await waitFor(() => {
+      expect(fetchPlanLimitsMock).toHaveBeenCalled();
+    });
+
+    const threadTextarea = await screen.findByLabelText('Start a new discussion');
+    const mentionInputs = screen.getAllByLabelText('Mention teammates (optional)');
+    const threadMentionInput = mentionInputs[0] as HTMLInputElement;
+
+    await waitFor(() => {
+      expect(threadMentionInput).not.toBeDisabled();
+    });
+
+    await user.type(threadMentionInput, '@alex');
+
+    const mentionOption = await screen.findByRole('option', { name: /Alex Example/i });
+    const mentionOptionButton = within(mentionOption).getByRole('button', { name: /Alex Example/i });
+    await user.click(mentionOptionButton);
+
+    await user.type(threadTextarea, 'Thread kickoff  ');
+
+    await user.click(screen.getByRole('button', { name: 'Create thread' }));
+
+    await waitFor(() => {
+      expect(createCommentThreadMock).toHaveBeenCalledWith({
+        promptId: 'prompt-1',
+        body: 'Thread kickoff',
+        mentions: ['user-2'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(threadMentionInput).toHaveValue('');
+    });
+  });
+});
+
 describe('PromptCommentsPanel - pagination', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -418,6 +612,17 @@ describe('PromptCommentsPanel - pagination', () => {
     createCommentMock.mockResolvedValue(defaultComment);
     deleteCommentMock.mockResolvedValue('comment-1');
     updateCommentMock.mockResolvedValue(defaultComment);
+    useCommentMentionSuggestionsMock.mockImplementation(
+      () =>
+        ({
+          data: [],
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+          error: null,
+          refetch: vi.fn(),
+        }) as never,
+    );
   });
 
   afterEach(() => {
