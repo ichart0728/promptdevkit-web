@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast';
 import { UpgradeDialog } from '@/components/common/UpgradeDialog';
+import { CommentMentionsField } from './CommentMentionsField';
 import {
   commentThreadCommentsQueryKey,
   commentThreadsQueryKey,
@@ -44,8 +45,11 @@ const THREADS_PAGINATION = { offset: 0, limit: 20 } as const;
 const COMMENTS_PAGINATION = { offset: 0, limit: 50 } as const;
 const THREAD_LIMIT_KEY = 'comment_threads_per_prompt';
 
+const mentionsSchema = z.array(z.string().min(1)).max(20).default([]);
+
 const commentFormSchema = z.object({
   body: z.string().trim().min(1, 'Comment cannot be empty.'),
+  mentions: mentionsSchema,
 });
 
 const threadFormSchema = z.object({
@@ -53,6 +57,7 @@ const threadFormSchema = z.object({
     .string()
     .trim()
     .min(1, 'Thread description cannot be empty.'),
+  mentions: mentionsSchema,
 });
 
 const formatTimestamp = (timestamp: string) => {
@@ -114,6 +119,7 @@ export type PromptCommentsPanelProps = {
   promptId: string | null;
   userId: string | null;
   initialThreadId?: string | null;
+  workspaceId?: string | null;
 };
 
 type CommentFormValues = z.infer<typeof commentFormSchema>;
@@ -141,8 +147,10 @@ export const PromptCommentsPanel = ({
   promptId,
   userId,
   initialThreadId = null,
+  workspaceId: workspaceIdProp = null,
 }: PromptCommentsPanelProps) => {
   const queryClient = useQueryClient();
+  const workspaceId = workspaceIdProp ?? null;
   const [activeThreadId, setActiveThreadId] = React.useState<string | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   const [commentsError, setCommentsError] = React.useState<string | null>(null);
@@ -156,12 +164,12 @@ export const PromptCommentsPanel = ({
 
   const commentForm = useForm<CommentFormValues>({
     resolver: zodResolver(commentFormSchema),
-    defaultValues: { body: '' },
+    defaultValues: { body: '', mentions: [] },
   });
 
   const threadForm = useForm<ThreadFormValues>({
     resolver: zodResolver(threadFormSchema),
-    defaultValues: { body: '' },
+    defaultValues: { body: '', mentions: [] },
   });
 
   React.useEffect(() => {
@@ -171,8 +179,8 @@ export const PromptCommentsPanel = ({
     setThreadFormError(null);
     setThreadEvaluation(null);
     setIsUpgradeDialogOpen(false);
-    commentForm.reset({ body: '' });
-    threadForm.reset({ body: '' });
+    commentForm.reset({ body: '', mentions: [] });
+    threadForm.reset({ body: '', mentions: [] });
     setEditingCommentId(null);
     setEditingDraft('');
     setEditingError(null);
@@ -351,6 +359,7 @@ export const PromptCommentsPanel = ({
         threadId: activeThreadId,
         userId,
         body: values.body.trim(),
+        mentions: values.mentions,
       });
     },
     onMutate: async (values) => {
@@ -373,7 +382,7 @@ export const PromptCommentsPanel = ({
         promptId,
         threadId: activeThreadId,
         body: values.body.trim(),
-        mentions: [],
+        mentions: values.mentions,
         createdBy: userId ?? 'anonymous',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -406,7 +415,7 @@ export const PromptCommentsPanel = ({
         queryClient.setQueryData(context.queryKey, context.previousData);
       }
 
-      commentForm.reset({ body: values.body });
+      commentForm.reset({ body: values.body, mentions: values.mentions });
 
       if (error instanceof PlanLimitError) {
         const message = buildPlanLimitMessage(error.evaluation);
@@ -440,7 +449,7 @@ export const PromptCommentsPanel = ({
           ),
         } satisfies InfiniteData<Comment[]>;
       });
-      commentForm.reset({ body: '' });
+      commentForm.reset({ body: '', mentions: [] });
       queryClient.invalidateQueries({ queryKey: promptCommentsQueryKey(promptId) });
     },
   });
@@ -611,8 +620,8 @@ export const PromptCommentsPanel = ({
     },
   });
 
-  const createThreadMutation = useMutation<CommentThread, Error, { body: string }>({
-    mutationFn: async ({ body }) => {
+  const createThreadMutation = useMutation<CommentThread, Error, { body: string; mentions: string[] }>({
+    mutationFn: async ({ body, mentions }) => {
       if (!promptId) {
         throw new Error('Select a prompt before starting a discussion.');
       }
@@ -621,7 +630,7 @@ export const PromptCommentsPanel = ({
         throw new Error('You must be signed in to create a discussion thread.');
       }
 
-      return createCommentThread({ promptId, body });
+      return createCommentThread({ promptId, body, mentions });
     },
     onSuccess: async (thread) => {
       if (!promptId) {
@@ -655,7 +664,7 @@ export const PromptCommentsPanel = ({
       setThreadFormError(null);
       setThreadEvaluation(null);
       setIsUpgradeDialogOpen(false);
-      threadForm.reset({ body: '' });
+      threadForm.reset({ body: '', mentions: [] });
 
       toast({ title: 'Discussion started', description: 'A new thread has been created.' });
 
@@ -737,6 +746,7 @@ export const PromptCommentsPanel = ({
     }
 
     const trimmedBody = values.body.trim();
+    const mentions = values.mentions;
     const evaluation = evaluateIntegerPlanLimit({
       limits: planLimits,
       key: THREAD_LIMIT_KEY,
@@ -754,7 +764,7 @@ export const PromptCommentsPanel = ({
     }
 
     try {
-      await createThreadMutation.mutateAsync({ body: trimmedBody });
+      await createThreadMutation.mutateAsync({ body: trimmedBody, mentions });
     } catch (error) {
       console.error(error);
     }
@@ -1066,6 +1076,26 @@ export const PromptCommentsPanel = ({
           ) : null}
         </div>
 
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="prompt-thread-mentions">
+            Mention teammates (optional)
+          </label>
+          <CommentMentionsField
+            control={threadForm.control}
+            name="mentions"
+            inputId="prompt-thread-mentions"
+            workspaceId={workspaceId}
+            disabled={
+              createThreadMutation.isPending ||
+              !promptId ||
+              !userId ||
+              threadsQuery.isPending ||
+              userPlanQuery.status === 'pending' ||
+              planLimitsQuery.status === 'pending'
+            }
+          />
+        </div>
+
         <div className="flex items-center justify-end gap-2">
           {threadEvaluation?.shouldRecommendUpgrade ? (
             <Button type="button" variant="outline" onClick={() => setIsUpgradeDialogOpen(true)}>
@@ -1105,6 +1135,25 @@ export const PromptCommentsPanel = ({
           {commentForm.formState.errors.body ? (
             <p className="text-xs text-destructive">{commentForm.formState.errors.body.message}</p>
           ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="prompt-comment-mentions">
+            Mention teammates (optional)
+          </label>
+          <CommentMentionsField
+            control={commentForm.control}
+            name="mentions"
+            inputId="prompt-comment-mentions"
+            workspaceId={workspaceId}
+            disabled={
+              createCommentMutation.isPending ||
+              deleteCommentMutation.isPending ||
+              !promptId ||
+              !activeThreadId ||
+              !userId
+            }
+          />
         </div>
 
         {formError ? <p className="text-xs text-destructive">{formError}</p> : null}

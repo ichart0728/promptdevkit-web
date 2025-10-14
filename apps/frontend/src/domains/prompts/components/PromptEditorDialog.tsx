@@ -467,6 +467,7 @@ export const PromptEditorDialog = ({
               promptId={promptId}
               userId={userId}
               initialThreadId={initialThreadId}
+              workspaceId={workspace?.id ?? null}
             />
           ) : null}
         </div>
