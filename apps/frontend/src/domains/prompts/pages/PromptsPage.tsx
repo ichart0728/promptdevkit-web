@@ -74,7 +74,7 @@ const promptFiltersFieldSchema = z.object({
 
 const promptFiltersSubmitSchema = promptFiltersFieldSchema.transform(({ q, tags }) => ({
   q: q?.trim() ?? '',
-  tags: formatTags(tags),
+  tags: normalizeSearchTags(formatTags(tags)),
 }));
 
 type PromptFiltersFieldValues = z.infer<typeof promptFiltersFieldSchema>;
@@ -115,6 +115,8 @@ type PromptListItemRowProps = {
   workspaceId: string | null;
   promptsQueryKey: QueryKey;
   favoritesQueryKey: QueryKey;
+  onTagClick: (tag: string) => void;
+  activeTagFilters: string[];
 };
 
 const PromptListItemRow = ({
@@ -128,6 +130,8 @@ const PromptListItemRow = ({
   workspaceId,
   promptsQueryKey,
   favoritesQueryKey,
+  onTagClick,
+  activeTagFilters,
 }: PromptListItemRowProps) => (
   <li key={prompt.id}>
     <div className="space-y-3 rounded-lg border bg-card p-4">
@@ -187,9 +191,16 @@ const PromptListItemRow = ({
       {prompt.tags.length ? (
         <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
           {prompt.tags.map((tag) => (
-            <span key={tag} className="rounded bg-muted px-2 py-0.5">
+            <button
+              key={tag}
+              type="button"
+              className="rounded bg-muted px-2 py-0.5 transition hover:bg-muted/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              onClick={() => onTagClick(tag)}
+              aria-label={`Filter by tag ${tag}`}
+              aria-pressed={activeTagFilters.includes(tag.toLowerCase())}
+            >
               #{tag}
-            </span>
+            </button>
           ))}
         </div>
       ) : null}
@@ -201,6 +212,25 @@ const formatTags = (raw: string | undefined) =>
   raw?.split(',')
     .map((tag) => tag.trim())
     .filter(Boolean) ?? [];
+
+const normalizeSearchTags = (tags: string[]) => {
+  const seen = new Set<string>();
+
+  return tags
+    .map((tag) => tag.trim().toLowerCase())
+    .filter((tag) => {
+      if (!tag) {
+        return false;
+      }
+
+      if (seen.has(tag)) {
+        return false;
+      }
+
+      seen.add(tag);
+      return true;
+    });
+};
 
 const buildErrorMessage = (message?: string) =>
   `Failed to load prompts. ${message ?? 'Unknown error'}`;
@@ -762,11 +792,12 @@ export const PromptsPage = () => {
       : null;
   const searchTags = React.useMemo(() => {
     if (Array.isArray(rawSearchTags)) {
-      return rawSearchTags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0);
+      const filteredTags = rawSearchTags.filter((tag): tag is string => typeof tag === 'string');
+      return normalizeSearchTags(filteredTags);
     }
 
     if (typeof rawSearchTags === 'string') {
-      return formatTags(rawSearchTags);
+      return normalizeSearchTags(formatTags(rawSearchTags));
     }
 
     return [];
@@ -932,35 +963,57 @@ export const PromptsPage = () => {
     }
   };
 
+  const syncFiltersToSearch = React.useCallback(
+    (values: PromptFiltersSubmitValues) => {
+      const normalizedQuery = values.q.trim();
+      const normalizedTags = normalizeSearchTags(values.tags);
+
+      void navigate({
+        to: '.',
+        search: (previous) => ({
+          ...previous,
+          q: normalizedQuery.length > 0 ? normalizedQuery : undefined,
+          tags: normalizedTags.length > 0 ? normalizedTags : undefined,
+          promptId: undefined,
+          threadId: undefined,
+        }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
   const handleFiltersSubmit = filtersForm.handleSubmit((values) => {
     const parsedFilters: PromptFiltersSubmitValues = promptFiltersSubmitSchema.parse(values);
-    void navigate({
-      to: '.',
-      search: (previous) => ({
-        ...previous,
-        q: parsedFilters.q.length > 0 ? parsedFilters.q : undefined,
-        tags: parsedFilters.tags.length > 0 ? parsedFilters.tags : undefined,
-        promptId: undefined,
-        threadId: undefined,
-      }),
-      replace: true,
-    });
+    syncFiltersToSearch(parsedFilters);
   });
 
   const handleFiltersReset = () => {
     filtersForm.reset({ q: '', tags: '' });
-    void navigate({
-      to: '.',
-      search: (previous) => ({
-        ...previous,
-        q: undefined,
-        tags: undefined,
-        promptId: undefined,
-        threadId: undefined,
-      }),
-      replace: true,
-    });
+    syncFiltersToSearch({ q: '', tags: [] });
   };
+
+  const handleTagClick = React.useCallback(
+    (tag: string) => {
+      const normalizedTag = tag.trim();
+
+      if (normalizedTag.length === 0) {
+        return;
+      }
+
+      const nextTags = normalizeSearchTags([...searchTags, normalizedTag]);
+      const hasChanged =
+        nextTags.length !== searchTags.length ||
+        nextTags.some((nextTag, index) => nextTag !== searchTags[index]);
+
+      if (!hasChanged) {
+        return;
+      }
+
+      syncFiltersToSearch({ q: rawSearchQuery, tags: nextTags });
+    },
+    [rawSearchQuery, searchTags, syncFiltersToSearch],
+  );
 
   const handleSubmit = form.handleSubmit(async (values) => {
     setCreatePromptError(null);
@@ -1093,6 +1146,8 @@ export const PromptsPage = () => {
               workspaceId={workspaceId}
               promptsQueryKey={promptsKey}
               favoritesQueryKey={favoritesQueryKeyValue}
+              onTagClick={handleTagClick}
+              activeTagFilters={normalizedTagFilters}
             />
           ))}
         </ul>

@@ -475,7 +475,7 @@ describe('PromptsPage', () => {
     await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
 
     await user.type(screen.getByLabelText('Search'), ' Prompt Beta ');
-    await user.type(screen.getByLabelText('Tags (comma separated)'), 'meeting, summary');
+    await user.type(screen.getByLabelText('Tags (comma separated)'), 'Meeting, summary, meeting ');
 
     await user.click(screen.getByRole('button', { name: 'Apply filters' }));
 
@@ -522,6 +522,82 @@ describe('PromptsPage', () => {
       throw new Error('Expected navigate search reducer to be a function.');
     }
     expect(navigateArgument.search({ q: 'initial', tags: ['focus'] })).toEqual({
+      q: undefined,
+      tags: undefined,
+      promptId: undefined,
+      threadId: undefined,
+    });
+  });
+
+  it('applies tag filters from the prompt list and allows clearing them', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['meeting', 'summary'],
+      },
+      {
+        id: 'prompt-2',
+        title: 'Prompt Beta',
+        body: 'Summarize the meeting notes.',
+        tags: ['summary'],
+      },
+    ]);
+    const user = userEvent.setup();
+
+    const { rerender, queryClient } = renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Filter by tag meeting' }));
+
+    const navigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
+    expect(navigateArgument).toMatchObject({ to: '.', replace: true });
+    if (!navigateArgument || typeof navigateArgument.search !== 'function') {
+      throw new Error('Expected navigate search reducer to be a function.');
+    }
+
+    const nextSearchState = navigateArgument.search(currentSearchState);
+    expect(nextSearchState).toEqual({
+      q: undefined,
+      tags: ['meeting'],
+      promptId: undefined,
+      threadId: undefined,
+    });
+
+    await act(async () => {
+      currentSearchState = nextSearchState;
+      useSearchMock.mockImplementation(() => currentSearchState);
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <PromptsPage />
+        </QueryClientProvider>,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Tags (comma separated)')).toHaveValue('meeting');
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Clear filters' })).not.toBeDisabled();
+    });
+
+    navigateSpy.mockClear();
+
+    await user.click(screen.getByRole('button', { name: 'Filter by tag meeting' }));
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    const clearNavigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
+    expect(clearNavigateArgument).toMatchObject({ to: '.', replace: true });
+    if (!clearNavigateArgument || typeof clearNavigateArgument.search !== 'function') {
+      throw new Error('Expected navigate search reducer to be a function.');
+    }
+
+    expect(clearNavigateArgument.search(currentSearchState)).toEqual({
       q: undefined,
       tags: undefined,
       promptId: undefined,
