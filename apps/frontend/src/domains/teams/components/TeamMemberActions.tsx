@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { toast } from '@/components/common/toast';
 import { Button } from '@/components/ui/button';
 
 import type { Team, TeamMember, TeamMemberRole } from '../api/teams';
@@ -25,12 +27,6 @@ const isDowngrade = (current: TeamMemberRole, next: TeamMemberRole) => {
   return nextRank < currentRank;
 };
 
-const showAlert = (message: string) => {
-  if (typeof window !== 'undefined') {
-    window.alert(message);
-  }
-};
-
 type TeamMemberActionsProps = {
   teamId: string;
   teamName: string;
@@ -53,6 +49,7 @@ export const TeamMemberActions: React.FC<TeamMemberActionsProps> = ({
   const selectId = React.useId();
   const queryClient = useQueryClient();
   const queryKey = teamsQueryKey(currentUserId);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = React.useState(false);
 
   const isSelf = member.user?.id === currentUserId;
   const isAdmin = currentUserRole === 'admin';
@@ -94,11 +91,17 @@ export const TeamMemberActions: React.FC<TeamMemberActionsProps> = ({
         queryClient.setQueryData(queryKey, context.previousTeams);
       }
 
-      showAlert('Failed to update team member role. Please try again.');
+      toast({
+        title: 'Failed to update role',
+        description: 'Please try again.',
+      });
     },
     onSuccess: (_result, nextRole) => {
       const roleLabel = ROLE_LABELS[nextRole] ?? nextRole;
-      showAlert(`Role updated to ${roleLabel}.`);
+      toast({
+        title: 'Role updated',
+        description: roleLabel,
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -136,13 +139,22 @@ export const TeamMemberActions: React.FC<TeamMemberActionsProps> = ({
         queryClient.setQueryData(queryKey, context.previousTeams);
       }
 
-      showAlert('Failed to update team membership. Please try again.');
+      toast({
+        title: 'Failed to update membership',
+        description: 'Please try again.',
+      });
     },
     onSuccess: () => {
       if (isSelf) {
-        showAlert(`You have left ${teamName}.`);
+        toast({
+          title: 'Left team',
+          description: `You have left ${teamName}.`,
+        });
       } else {
-        showAlert('Member removed from the team.');
+        toast({
+          title: 'Member removed',
+          description: `${member.user?.name ?? 'Team member'} no longer has access.`,
+        });
       }
     },
     onSettled: () => {
@@ -163,19 +175,11 @@ export const TeamMemberActions: React.FC<TeamMemberActionsProps> = ({
   };
 
   const handleRemove = () => {
-    const memberName = member.user?.name ?? 'this member';
-    const confirmationMessage = isSelf
-      ? `Are you sure you want to leave ${teamName}?`
-      : `Remove ${memberName} from ${teamName}?`;
+    setIsConfirmDialogOpen(true);
+  };
 
-    if (typeof window !== 'undefined') {
-      const confirmed = window.confirm(confirmationMessage);
-
-      if (!confirmed) {
-        return;
-      }
-    }
-
+  const handleConfirmRemove = () => {
+    setIsConfirmDialogOpen(false);
     removeMemberMutation.mutate();
   };
 
@@ -190,6 +194,11 @@ export const TeamMemberActions: React.FC<TeamMemberActionsProps> = ({
   );
 
   const removeLabel = isSelf ? 'Leave team' : 'Remove member';
+  const confirmTitle = isSelf ? 'Leave team' : 'Remove member';
+  const memberName = member.user?.name ?? 'this member';
+  const confirmDescription = isSelf
+    ? `Are you sure you want to leave ${teamName}?`
+    : `Remove ${memberName} from ${teamName}?`;
 
   return (
     <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -219,14 +228,26 @@ export const TeamMemberActions: React.FC<TeamMemberActionsProps> = ({
         </span>
       )}
       {canRemoveMember ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleRemove}
-          disabled={isBusy}
-        >
-          {removeLabel}
-        </Button>
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRemove}
+            disabled={isBusy}
+          >
+            {removeLabel}
+          </Button>
+          <ConfirmDialog
+            open={isConfirmDialogOpen}
+            onOpenChange={setIsConfirmDialogOpen}
+            title={confirmTitle}
+            description={confirmDescription}
+            confirmLabel={removeLabel}
+            cancelLabel="Cancel"
+            isConfirming={removeMemberMutation.isPending}
+            onConfirm={handleConfirmRemove}
+          />
+        </>
       ) : null}
     </div>
   );
