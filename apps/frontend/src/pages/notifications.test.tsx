@@ -239,6 +239,7 @@ describe('NotificationsPage', () => {
                   message: 'Join the discussion',
                   prompt_id: 'prompt-7',
                   thread_id: 'thread-3',
+                  comment_id: 'comment-55',
                 } as NotificationItem['payload'],
               }),
             ],
@@ -255,7 +256,7 @@ describe('NotificationsPage', () => {
 
     expect(router.navigate).toHaveBeenCalledWith({
       to: '/prompts',
-      search: { promptId: 'prompt-7', threadId: 'thread-3' },
+      search: { promptId: 'prompt-7', threadId: 'thread-3', commentId: 'comment-55' },
     });
     expect(mutate).toHaveBeenCalledWith({ id: 'mention-2', read: true });
   });

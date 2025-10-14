@@ -91,6 +91,7 @@ type PromptsSearchParams = {
   tags?: string[] | string;
   promptId?: string;
   threadId?: string;
+  commentId?: string;
 };
 
 type OptimisticContext = {
@@ -273,6 +274,7 @@ export const PromptsPage = () => {
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [editorInitialTab, setEditorInitialTab] = React.useState<'edit' | 'history' | 'discussion'>('edit');
   const [editorInitialThreadId, setEditorInitialThreadId] = React.useState<string | null>(null);
+  const [editorInitialCommentId, setEditorInitialCommentId] = React.useState<string | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
 
   const workspaceId = activeWorkspace?.id ?? null;
@@ -760,6 +762,10 @@ export const PromptsPage = () => {
     typeof searchParams?.threadId === 'string' && searchParams.threadId.trim().length > 0
       ? searchParams.threadId
       : null;
+  const mentionCommentId =
+    typeof searchParams?.commentId === 'string' && searchParams.commentId.trim().length > 0
+      ? searchParams.commentId
+      : null;
   const searchTags = React.useMemo(() => {
     if (Array.isArray(rawSearchTags)) {
       return rawSearchTags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0);
@@ -875,10 +881,11 @@ export const PromptsPage = () => {
   React.useEffect(() => {
     if (!mentionPromptId) {
       mentionNavigationHandledRef.current = null;
+      setEditorInitialCommentId(null);
       return;
     }
 
-    const signature = `${mentionPromptId}:${mentionThreadId ?? ''}`;
+    const signature = `${mentionPromptId}:${mentionThreadId ?? ''}:${mentionCommentId ?? ''}`;
 
     if (mentionNavigationHandledRef.current === signature) {
       return;
@@ -902,6 +909,7 @@ export const PromptsPage = () => {
     setLastEvaluation(null);
     setEditorInitialTab('discussion');
     setEditorInitialThreadId(mentionThreadId ?? null);
+    setEditorInitialCommentId(mentionCommentId ?? null);
     setPromptBeingEdited(targetPrompt);
     setEditorOpen(true);
     mentionNavigationHandledRef.current = signature;
@@ -912,6 +920,7 @@ export const PromptsPage = () => {
         ...previous,
         promptId: undefined,
         threadId: undefined,
+        commentId: undefined,
       }),
       replace: true,
     });
@@ -919,6 +928,7 @@ export const PromptsPage = () => {
     activeWorkspace,
     mentionPromptId,
     mentionThreadId,
+    mentionCommentId,
     navigate,
     prompts,
     userId,
@@ -1462,6 +1472,7 @@ export const PromptsPage = () => {
         userId={userId}
         initialTab={editorInitialTab}
         initialThreadId={editorInitialThreadId}
+        initialCommentId={editorInitialCommentId}
       />
 
       <Dialog open={!!promptPendingDeletion} onOpenChange={handleDeleteDialogOpenChange}>

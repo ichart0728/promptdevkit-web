@@ -57,6 +57,7 @@ export type PromptEditorDialogProps = {
   onOpenChange: (open: boolean) => void;
   initialTab?: 'edit' | 'history' | 'discussion';
   initialThreadId?: string | null;
+  initialCommentId?: string | null;
 };
 
 export const PromptEditorDialog = ({
@@ -67,6 +68,7 @@ export const PromptEditorDialog = ({
   onOpenChange,
   initialTab = 'edit',
   initialThreadId = null,
+  initialCommentId = null,
 }: PromptEditorDialogProps) => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = React.useState<'edit' | 'history' | 'discussion'>(initialTab);
@@ -467,6 +469,7 @@ export const PromptEditorDialog = ({
               promptId={promptId}
               userId={userId}
               initialThreadId={initialThreadId}
+              initialCommentId={initialCommentId}
               workspaceId={workspace?.id ?? null}
             />
           ) : null}

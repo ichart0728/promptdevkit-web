@@ -171,6 +171,7 @@ describe('NotificationsMenu', () => {
                   message: 'You were mentioned',
                   prompt_id: 'prompt-42',
                   thread_id: 'thread-9',
+                  comment_id: 'comment-33',
                 } as NotificationItem['payload'],
               }),
             ],
@@ -188,7 +189,7 @@ describe('NotificationsMenu', () => {
 
     expect(router.navigate).toHaveBeenCalledWith({
       to: '/prompts',
-      search: { promptId: 'prompt-42', threadId: 'thread-9' },
+      search: { promptId: 'prompt-42', threadId: 'thread-9', commentId: 'comment-33' },
     });
     expect(mutate).toHaveBeenCalledWith({ id: 'mention-1', read: true });
   });

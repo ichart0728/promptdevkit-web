@@ -120,7 +120,13 @@ const teamWorkspace = {
 };
 
 let activeWorkspaceRef: { current: typeof personalWorkspace | typeof teamWorkspace | null };
-let currentSearchState: { q?: string; tags?: string[]; promptId?: string; threadId?: string };
+let currentSearchState: {
+  q?: string;
+  tags?: string[];
+  promptId?: string;
+  threadId?: string;
+  commentId?: string;
+};
 type NavigateOptions = Parameters<ReturnType<typeof useNavigate>>[0];
 let navigateSpy: ReturnType<typeof vi.fn<[NavigateOptions], Promise<void>>>;
 
@@ -526,11 +532,12 @@ describe('PromptsPage', () => {
       tags: undefined,
       promptId: undefined,
       threadId: undefined,
+      commentId: undefined,
     });
   });
 
   it('opens the prompt editor to the discussion tab when mention params are present', async () => {
-    currentSearchState = { promptId: 'prompt-7', threadId: 'thread-3' };
+    currentSearchState = { promptId: 'prompt-7', threadId: 'thread-3', commentId: 'comment-99' };
     useSearchMock.mockImplementation(() => currentSearchState);
     fetchPromptsMock.mockResolvedValue([
       {
@@ -550,6 +557,7 @@ describe('PromptsPage', () => {
     expect(lastPromptEditorDialogProps).toMatchObject({
       initialTab: 'discussion',
       initialThreadId: 'thread-3',
+      initialCommentId: 'comment-99',
     });
     expect(lastPromptEditorDialogProps?.prompt).toMatchObject({ id: 'prompt-7' });
 
@@ -564,6 +572,7 @@ describe('PromptsPage', () => {
       threadId: undefined,
       q: undefined,
       tags: undefined,
+      commentId: undefined,
     });
   });
 
