@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { vi } from 'vitest';
@@ -95,6 +95,9 @@ type RenderPanelOptions = {
   promptId?: string | null;
   userId?: string | null;
   workspaceId?: string | null;
+  initialThreadId?: string | null;
+  initialCommentId?: string | null;
+  highlightDurationMs?: number;
 };
 
 const defaultThread: CommentThread = {
@@ -119,6 +122,9 @@ const renderPanel = ({
   promptId = 'prompt-1',
   userId = 'user-1',
   workspaceId = 'workspace-1',
+  initialThreadId = null,
+  initialCommentId = null,
+  highlightDurationMs,
 }: RenderPanelOptions = {}) => {
   const queryClient = createTestQueryClient();
   const user = userEvent.setup();
@@ -126,7 +132,14 @@ const renderPanel = ({
 
   const renderResult = render(
     <QueryClientProvider client={queryClient}>
-      <PromptCommentsPanel promptId={promptId} userId={userId} workspaceId={workspaceId} />
+      <PromptCommentsPanel
+        promptId={promptId}
+        userId={userId}
+        workspaceId={workspaceId}
+        initialThreadId={initialThreadId}
+        initialCommentId={initialCommentId}
+        highlightDurationMs={highlightDurationMs}
+      />
     </QueryClientProvider>,
   );
 
@@ -431,6 +444,85 @@ describe('PromptCommentsPanel - comment editing', () => {
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
     expect(screen.getByText('Initial comment body')).toBeInTheDocument();
     expect(updateCommentMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('PromptCommentsPanel - mention highlighting', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchPromptCommentThreadsMock.mockResolvedValue([defaultThread]);
+    fetchThreadCommentsMock.mockResolvedValue([defaultComment]);
+    fetchUserPlanIdMock.mockResolvedValue('plan-free');
+    fetchPlanLimitsMock.mockResolvedValue({
+      comment_threads_per_prompt: {
+        key: 'comment_threads_per_prompt',
+        value_int: 5,
+        value_str: null,
+        value_json: null,
+      },
+    });
+    useCommentMentionSuggestionsMock.mockImplementation(
+      () =>
+        ({
+          data: [],
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+          error: null,
+          refetch: vi.fn(),
+        }) as never,
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('scrolls to the initial comment and highlights it', async () => {
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    const scrollIntoViewMock = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoViewMock as never;
+
+    await act(async () => {
+      renderPanel({
+        initialThreadId: 'thread-1',
+        initialCommentId: 'comment-1',
+        highlightDurationMs: 200,
+      });
+    });
+
+    await waitFor(() => {
+      expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
+    });
+
+    const commentBody = await screen.findByText('Initial comment body');
+    const listItem = commentBody.closest('li');
+    expect(listItem).not.toBeNull();
+    expect(listItem).toHaveAttribute('data-highlighted', 'true');
+
+    HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+  });
+
+  it('removes the highlight after the timeout elapses', async () => {
+    await act(async () => {
+      renderPanel({
+        initialThreadId: 'thread-1',
+        initialCommentId: 'comment-1',
+        highlightDurationMs: 200,
+      });
+    });
+
+    const commentBody = await screen.findByText('Initial comment body');
+    const listItem = commentBody.closest('li');
+    expect(listItem).not.toBeNull();
+
+    await waitFor(() => {
+      expect(listItem).toHaveAttribute('data-highlighted', 'true');
+    });
+
+    await waitFor(() => {
+      expect(listItem).not.toHaveAttribute('data-highlighted');
+    });
   });
 });
 

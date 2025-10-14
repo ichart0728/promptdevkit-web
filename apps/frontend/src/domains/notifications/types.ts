@@ -19,6 +19,7 @@ export type NotificationItem = {
 export type MentionNotificationPayload = NotificationPayload & {
   prompt_id: string;
   thread_id?: string | null;
+  comment_id?: string | null;
 };
 
 export type MentionNotification = NotificationItem & {

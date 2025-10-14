@@ -49,14 +49,20 @@ const isMentionPayload = (payload: NotificationPayload): payload is MentionNotif
 export const isMentionNotification = (notification: NotificationItem): notification is MentionNotification =>
   notification.type === 'mention' && isMentionPayload(notification.payload);
 
-export type MentionNavigationSearch = { promptId: string; threadId?: string };
+export type MentionNavigationSearch = { promptId: string; threadId?: string; commentId?: string };
 
 export const getMentionNavigationSearch = (notification: MentionNotification): MentionNavigationSearch => {
   const promptId = notification.payload['prompt_id'];
   const threadIdRaw = notification.payload['thread_id'];
   const threadId = isNonEmptyString(threadIdRaw) ? threadIdRaw : undefined;
+  const commentIdRaw = notification.payload['comment_id'];
+  const commentId = isNonEmptyString(commentIdRaw) ? commentIdRaw : undefined;
 
-  return threadId ? { promptId, threadId } : { promptId };
+  return {
+    promptId,
+    ...(threadId ? { threadId } : {}),
+    ...(commentId ? { commentId } : {}),
+  };
 };
 
 export const countUnreadMentionNotifications = (notifications: NotificationItem[]) =>

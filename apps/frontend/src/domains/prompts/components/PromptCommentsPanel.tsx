@@ -119,7 +119,9 @@ export type PromptCommentsPanelProps = {
   promptId: string | null;
   userId: string | null;
   initialThreadId?: string | null;
+  initialCommentId?: string | null;
   workspaceId?: string | null;
+  highlightDurationMs?: number;
 };
 
 type CommentFormValues = z.infer<typeof commentFormSchema>;
@@ -147,7 +149,9 @@ export const PromptCommentsPanel = ({
   promptId,
   userId,
   initialThreadId = null,
+  initialCommentId = null,
   workspaceId: workspaceIdProp = null,
+  highlightDurationMs = 4000,
 }: PromptCommentsPanelProps) => {
   const queryClient = useQueryClient();
   const workspaceId = workspaceIdProp ?? null;
@@ -161,6 +165,11 @@ export const PromptCommentsPanel = ({
   const [editingDraft, setEditingDraft] = React.useState('');
   const [editingError, setEditingError] = React.useState<string | null>(null);
   const appliedInitialThreadIdRef = React.useRef<string | null>(null);
+  const appliedInitialCommentIdRef = React.useRef<string | null>(null);
+  const commentRefs = React.useRef(new Map<string, HTMLLIElement>());
+  const [highlightedCommentId, setHighlightedCommentId] = React.useState<string | null>(null);
+  const highlightTimeoutRef = React.useRef<number | null>(null);
+  const highlightedCommentIdRef = React.useRef<string | null>(null);
 
   const commentForm = useForm<CommentFormValues>({
     resolver: zodResolver(commentFormSchema),
@@ -185,7 +194,27 @@ export const PromptCommentsPanel = ({
     setEditingDraft('');
     setEditingError(null);
     appliedInitialThreadIdRef.current = null;
+    appliedInitialCommentIdRef.current = null;
+    commentRefs.current.clear();
+    if (highlightedCommentIdRef.current !== null) {
+      setHighlightedCommentId(null);
+      highlightedCommentIdRef.current = null;
+    }
+    if (highlightTimeoutRef.current !== null) {
+      window.clearTimeout(highlightTimeoutRef.current);
+      highlightTimeoutRef.current = null;
+    }
   }, [promptId, commentForm, threadForm]);
+
+  React.useEffect(() => () => {
+    if (highlightTimeoutRef.current !== null) {
+      window.clearTimeout(highlightTimeoutRef.current);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    highlightedCommentIdRef.current = highlightedCommentId;
+  }, [highlightedCommentId]);
 
   const userPlanQuery = useQuery({
     queryKey: userPlanQueryKey(userId ?? null),
@@ -312,6 +341,10 @@ export const PromptCommentsPanel = ({
     [commentsQuery.data],
   );
 
+  const hasMoreCommentPages = commentsQuery.hasNextPage ?? false;
+  const fetchNextCommentsPage = commentsQuery.fetchNextPage;
+  const isFetchingNextCommentPage = commentsQuery.isFetchingNextPage;
+
   React.useEffect(() => {
     if (!initialThreadId) {
       appliedInitialThreadIdRef.current = null;
@@ -327,6 +360,70 @@ export const PromptCommentsPanel = ({
       appliedInitialThreadIdRef.current = initialThreadId;
     }
   }, [initialThreadId, threads]);
+
+  React.useEffect(() => {
+    if (highlightedCommentIdRef.current !== null) {
+      setHighlightedCommentId(null);
+      highlightedCommentIdRef.current = null;
+    }
+  }, [activeThreadId]);
+
+  React.useLayoutEffect(() => {
+    if (!promptId || !activeThreadId) {
+      return;
+    }
+
+    if (!initialCommentId) {
+      appliedInitialCommentIdRef.current = null;
+      if (highlightedCommentIdRef.current !== null) {
+        setHighlightedCommentId(null);
+        highlightedCommentIdRef.current = null;
+      }
+      return;
+    }
+
+    if (appliedInitialCommentIdRef.current === initialCommentId) {
+      return;
+    }
+
+    const targetComment = comments.find((comment) => comment.id === initialCommentId);
+
+    if (targetComment) {
+      appliedInitialCommentIdRef.current = initialCommentId;
+      setHighlightedCommentId(initialCommentId);
+
+      const element = commentRefs.current.get(initialCommentId);
+
+      if (element?.scrollIntoView) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      if (highlightTimeoutRef.current !== null) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedCommentId((current) => (current === initialCommentId ? null : current));
+        highlightTimeoutRef.current = null;
+        highlightedCommentIdRef.current = null;
+      }, highlightDurationMs);
+
+      return;
+    }
+
+    if (hasMoreCommentPages && !isFetchingNextCommentPage && typeof fetchNextCommentsPage === 'function') {
+      void fetchNextCommentsPage();
+    }
+  }, [
+    activeThreadId,
+    comments,
+    fetchNextCommentsPage,
+    hasMoreCommentPages,
+    initialCommentId,
+    isFetchingNextCommentPage,
+    highlightDurationMs,
+    promptId,
+  ]);
 
   React.useEffect(() => {
     if (!threads.length) {
@@ -944,7 +1041,22 @@ export const PromptCommentsPanel = ({
               updateCommentMutation.isPending && updateCommentMutation.variables?.commentId === comment.id;
 
             return (
-              <li key={comment.id} className="rounded-md border p-3 text-sm">
+              <li
+                key={comment.id}
+                className={`rounded-md border p-3 text-sm transition-shadow ${
+                  highlightedCommentId === comment.id
+                    ? 'border-primary bg-primary/5 ring-2 ring-primary/60 ring-offset-2 ring-offset-background'
+                    : ''
+                }`}
+                data-highlighted={highlightedCommentId === comment.id ? 'true' : undefined}
+                ref={(element) => {
+                  if (element) {
+                    commentRefs.current.set(comment.id, element);
+                  } else {
+                    commentRefs.current.delete(comment.id);
+                  }
+                }}
+              >
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-medium">{comment.createdBy}</span>
                   <span className="text-xs text-muted-foreground">{formatTimestamp(comment.createdAt)}</span>
