@@ -4,6 +4,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/router-devtools';
 
 import { SessionProvider } from '@/domains/auth/components/SessionProvider';
+import { NotificationsSubscriptionProvider } from '@/domains/notifications/components/NotificationsSubscriptionProvider';
 import { WorkspaceProvider } from '@/domains/workspaces/components/WorkspaceProvider';
 
 import { queryClient } from './queryClient';
@@ -12,9 +13,11 @@ import { router } from './router';
 export const AppProviders = () => (
   <QueryClientProvider client={queryClient}>
     <SessionProvider>
-      <WorkspaceProvider>
-        <RouterProvider router={router} />
-      </WorkspaceProvider>
+      <NotificationsSubscriptionProvider>
+        <WorkspaceProvider>
+          <RouterProvider router={router} />
+        </WorkspaceProvider>
+      </NotificationsSubscriptionProvider>
     </SessionProvider>
     {import.meta.env.DEV ? (
       <>
