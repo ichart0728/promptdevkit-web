@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast';
@@ -8,6 +8,7 @@ import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNo
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
 import type { NotificationItem } from '@/domains/notifications/types';
 import {
+  countUnreadMentionNotifications,
   countUnreadNotifications,
   flattenNotificationPages,
   getNotificationMessage,
@@ -15,6 +16,8 @@ import {
   getMentionNavigationSearch,
   isMentionNotification,
 } from '@/domains/notifications/utils';
+
+type NotificationFilter = 'all' | 'unread' | 'mentions';
 
 export const NotificationsPage = () => {
   const { data: session, isPending: isSessionPending } = useSessionQuery();
@@ -32,7 +35,28 @@ export const NotificationsPage = () => {
   const readMutation = useNotificationReadMutation(userId);
 
   const notifications = useMemo(() => flattenNotificationPages(data?.pages), [data?.pages]);
+  const [filter, setFilter] = useState<NotificationFilter>('all');
+
   const unreadCount = useMemo(() => countUnreadNotifications(notifications), [notifications]);
+  const unreadMentionsCount = useMemo(
+    () => countUnreadMentionNotifications(notifications),
+    [notifications],
+  );
+  const filteredNotifications = useMemo(() => {
+    if (filter === 'unread') {
+      return notifications.filter((notification) => !notification.read_at);
+    }
+
+    if (filter === 'mentions') {
+      return notifications.filter((notification) => isMentionNotification(notification));
+    }
+
+    return notifications;
+  }, [filter, notifications]);
+
+  const totalVisibleCount = filteredNotifications.length;
+  const displayedUnreadCount = filter === 'mentions' ? unreadMentionsCount : unreadCount;
+  const hasAnyNotifications = notifications.length > 0;
 
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
@@ -67,7 +91,7 @@ export const NotificationsPage = () => {
   };
 
   const handleMarkAllAsRead = () => {
-    if (unreadCount === 0) {
+    if (displayedUnreadCount === 0) {
       return;
     }
 
@@ -123,14 +147,43 @@ export const NotificationsPage = () => {
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
-          <span className="text-sm text-muted-foreground">Unread: {unreadCount}</span>
+          <div className="flex items-center gap-2" role="group" aria-label="Filter notifications">
+            {(
+              [
+                { label: 'All', value: 'all' },
+                { label: 'Unread', value: 'unread' },
+                { label: 'Mentions', value: 'mentions' },
+              ] as const
+            ).map(({ label, value }) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={filter === value ? 'default' : 'outline'}
+                aria-pressed={filter === value}
+                data-testid={`notifications-filter-${value}`}
+                onClick={() => setFilter(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <span className="text-sm text-muted-foreground">
+            {filter === 'mentions' ? 'Unread mentions' : 'Unread'}: {displayedUnreadCount}
+          </span>
           <Button
-            disabled={readMutation.isMutatingAll || unreadCount === 0}
+            disabled={readMutation.isMutatingAll || displayedUnreadCount === 0}
             onClick={handleMarkAllAsRead}
             size="sm"
             variant="outline"
           >
-            {readMutation.isMutatingAll ? 'Marking…' : 'Mark all as read'}
+            {readMutation.isMutatingAll
+              ? 'Marking…'
+              : filter === 'mentions'
+                ? 'Mark mentions as read'
+                : filter === 'unread'
+                  ? 'Mark unread as read'
+                  : 'Mark all as read'}
           </Button>
         </div>
       </div>
@@ -158,14 +211,11 @@ export const NotificationsPage = () => {
             Retry
           </Button>
         </div>
-      ) : notifications.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border px-6 py-12 text-center">
-          <p className="text-sm text-muted-foreground">You’re all caught up! New notifications will appear here.</p>
-        </div>
       ) : (
         <div className="space-y-4">
-          <ul className="space-y-4" role="list">
-            {notifications.map((notification) => {
+          {totalVisibleCount > 0 ? (
+            <ul className="space-y-4" role="list">
+              {filteredNotifications.map((notification) => {
               const message = getNotificationMessage(notification);
               const isRead = Boolean(notification.read_at);
 
@@ -219,8 +269,17 @@ export const NotificationsPage = () => {
                   </div>
                 </li>
               );
-            })}
-          </ul>
+              })}
+            </ul>
+          ) : (
+            <div className="rounded-md border border-dashed border-border px-6 py-12 text-center">
+              <p className="text-sm text-muted-foreground">
+                {hasAnyNotifications
+                  ? 'No notifications match this filter. Try a different selection.'
+                  : 'You’re all caught up! New notifications will appear here.'}
+              </p>
+            </div>
+          )}
           <div ref={loadMoreRef} data-testid="notifications-load-more-sentinel" className="h-px w-full" />
           {hasNextPage ? (
             <div className="flex justify-center">

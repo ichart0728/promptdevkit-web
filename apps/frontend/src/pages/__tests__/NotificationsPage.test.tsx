@@ -30,7 +30,7 @@ vi.mock('@/domains/notifications/hooks/useNotificationsQuery');
 vi.mock('@/domains/notifications/hooks/useNotificationReadMutation');
 vi.mock('@/components/common/toast', () => ({ toast: vi.fn() }));
 
-import { NotificationsPage } from './notifications';
+import { NotificationsPage } from '../notifications';
 
 const mockedUseSessionQuery = vi.mocked(useSessionQuery);
 const mockedUseNotificationsQuery = vi.mocked(useNotificationsQuery);
@@ -190,6 +190,93 @@ describe('NotificationsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Mark all as read' }));
 
     expect(mutateAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('filters notifications by unread and mentions modes', async () => {
+    const user = userEvent.setup();
+    const notifications: NotificationItem[] = [
+      createNotification({ id: 'notification-1', read_at: null }),
+      createNotification({ id: 'notification-2', read_at: '2024-01-20T12:00:00.000Z' }),
+      createNotification({
+        id: 'notification-3',
+        type: 'mention',
+        payload: {
+          title: 'Mention 1',
+          message: 'Unread mention',
+          prompt_id: 'prompt-1',
+        } as NotificationItem['payload'],
+        read_at: null,
+      }),
+      createNotification({
+        id: 'notification-4',
+        type: 'mention',
+        payload: {
+          title: 'Mention 2',
+          message: 'Read mention',
+          prompt_id: 'prompt-2',
+          comment_id: 'comment-2',
+        } as NotificationItem['payload'],
+        read_at: '2024-01-20T13:00:00.000Z',
+      }),
+    ];
+
+    mockedUseNotificationsQuery.mockReturnValue(
+      createQueryResult({ data: { pages: [notifications], pageParams: [0] } }),
+    );
+
+    renderNotificationsPage();
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(4);
+    expect(screen.getByText('Unread: 2')).toBeInTheDocument();
+
+    await act(async () => {
+      await user.click(screen.getByTestId('notifications-filter-unread'));
+    });
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByText('Unread: 2')).toBeInTheDocument();
+
+    await act(async () => {
+      await user.click(screen.getByTestId('notifications-filter-mentions'));
+    });
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByText('Unread mentions: 1')).toBeInTheDocument();
+  });
+
+  it('shows an empty filtered state while keeping pagination hooks available', async () => {
+    const user = userEvent.setup();
+    const notifications: NotificationItem[] = [
+      createNotification({ id: 'notification-5' }),
+    ];
+    const fetchNextPage = vi.fn();
+
+    mockedUseNotificationsQuery.mockReturnValue(
+      createQueryResult({
+        data: { pages: [notifications], pageParams: [0] },
+        hasNextPage: true,
+        fetchNextPage,
+      }),
+    );
+
+    renderNotificationsPage();
+
+    await act(async () => {
+      await user.click(screen.getByTestId('notifications-filter-mentions'));
+    });
+
+    expect(
+      screen.getByText('No notifications match this filter. Try a different selection.'),
+    ).toBeInTheDocument();
+
+    const sentinel = screen.getByTestId('notifications-load-more-sentinel');
+    expect(sentinel).toBeInTheDocument();
+
+    await act(async () => {
+      mockObservers.forEach((observer) => observer.trigger(true));
+    });
+
+    expect(fetchNextPage).toHaveBeenCalled();
   });
 
   it('fetches the next page when the sentinel enters the viewport', async () => {

@@ -23,6 +23,36 @@ exports[`NotificationsPage > matches the snapshot for the notifications list 1`]
       <div
         class="flex flex-col items-end gap-2 sm:flex-row sm:items-center"
       >
+        <div
+          aria-label="Filter notifications"
+          class="flex items-center gap-2"
+          role="group"
+        >
+          <button
+            aria-pressed="true"
+            class="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3"
+            data-testid="notifications-filter-all"
+            type="button"
+          >
+            All
+          </button>
+          <button
+            aria-pressed="false"
+            class="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3"
+            data-testid="notifications-filter-unread"
+            type="button"
+          >
+            Unread
+          </button>
+          <button
+            aria-pressed="false"
+            class="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3"
+            data-testid="notifications-filter-mentions"
+            type="button"
+          >
+            Mentions
+          </button>
+        </div>
         <span
           class="text-sm text-muted-foreground"
         >
