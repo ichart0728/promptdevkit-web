@@ -105,7 +105,9 @@ describe('fetchWorkspaceUsage', () => {
     expect(selectUsageMock).toHaveBeenCalledWith('id,name,prompt_count,latest_updated_at');
     expect(orderMock).toHaveBeenCalledWith('name', { ascending: true });
     expect(fromMock).toHaveBeenNthCalledWith(2, 'workspaces');
-    expect(selectMetadataMock.mock.calls[0]?.[0]).toContain('owner_user:users');
+    const selectMetadataArg = selectMetadataMock.mock.calls[0]?.[0];
+    expect(selectMetadataArg).toContain('owner_user:users!workspaces_owner_fk');
+    expect(selectMetadataArg).toContain('team:teams!workspaces_team_fk');
     expect(inMock).toHaveBeenCalledWith('id', ['workspace-personal', 'workspace-team']);
 
     expect(result).toEqual([
