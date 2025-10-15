@@ -20,3 +20,5 @@ port = 54324
 [storage]
 file_size_limit = 52428800
 
+[analytics]
+enabled = true
