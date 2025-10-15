@@ -13,11 +13,27 @@ import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimi
 import { fetchPromptFavorite, togglePromptFavorite } from '@/domains/prompts/api/promptFavorites';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useActiveWorkspace } from '@/domains/workspaces/hooks/useActiveWorkspace';
+import { toast } from '@/components/common/toast';
+import { copyToClipboard, ClipboardUnavailableError } from '@/lib/clipboard';
+import type * as clipboardModuleType from '@/lib/clipboard';
 
 vi.mock('@/components/common/UpgradeDialog', () => ({
   UpgradeDialog: ({ open }: { open: boolean; onResetEvaluation?: () => void }) =>
     open ? <div>Upgrade to unlock more capacity</div> : null,
 }));
+
+vi.mock('@/components/common/toast', () => ({
+  toast: vi.fn(),
+}));
+
+vi.mock('@/lib/clipboard', async () => {
+  const actual = (await vi.importActual('@/lib/clipboard')) as typeof clipboardModuleType;
+
+  return {
+    ...actual,
+    copyToClipboard: vi.fn(),
+  };
+});
 
 vi.mock('@/domains/prompts/api/prompts', () => ({
   promptsQueryKey: (workspaceId: string) => ['prompts', workspaceId] as const,
@@ -73,6 +89,8 @@ const useSessionQueryMock = vi.mocked(useSessionQuery);
 const useActiveWorkspaceMock = vi.mocked(useActiveWorkspace);
 const useSearchMock = vi.mocked(useSearch);
 const useNavigateMock = vi.mocked(useNavigate);
+const toastMock = vi.mocked(toast);
+const copyToClipboardMock = vi.mocked(copyToClipboard);
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -129,10 +147,12 @@ let currentSearchState: {
 };
 type NavigateOptions = Parameters<ReturnType<typeof useNavigate>>[0];
 let navigateSpy: ReturnType<typeof vi.fn<[NavigateOptions], Promise<void>>>;
-
 describe('PromptsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    toastMock.mockReset();
+    copyToClipboardMock.mockReset();
+    copyToClipboardMock.mockResolvedValue(undefined);
     useSessionQueryMock.mockReturnValue(buildSessionQueryValue());
     activeWorkspaceRef = { current: personalWorkspace };
     useActiveWorkspaceMock.mockImplementation(() => activeWorkspaceRef.current);
@@ -342,6 +362,98 @@ describe('PromptsPage', () => {
     expect(within(resolvedListItems[0]).getByRole('heading', { level: 3, name: 'Prompt Beta' })).toBeInTheDocument();
     expect(within(resolvedListItems[0]).getByText('Note: Remember follow-up actions.')).toBeInTheDocument();
     expect(within(resolvedListItems[1]).getByRole('heading', { level: 3, name: 'Prompt Alpha' })).toBeInTheDocument();
+  });
+
+  it('copies a prompt body to the clipboard', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['report'],
+      },
+    ]);
+    const user = userEvent.setup();
+
+    renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
+    const copyButton = await screen.findByRole('button', { name: 'Copy prompt Prompt Alpha' });
+
+    await user.click(copyButton);
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith({
+        title: 'Prompt copied',
+        description: 'Prompt body copied to clipboard.',
+      });
+    });
+
+    expect(copyToClipboardMock).toHaveBeenCalledWith('Generate a report.');
+  });
+
+  it('shows a fallback toast when clipboard access is denied', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['report'],
+      },
+    ]);
+    const user = userEvent.setup();
+    copyToClipboardMock.mockRejectedValueOnce(
+      Object.assign(new Error('denied'), { name: 'NotAllowedError' }),
+    );
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
+    const copyButton = await screen.findByRole('button', { name: 'Copy prompt Prompt Alpha' });
+
+    await user.click(copyButton);
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith({
+        title: 'Copy failed',
+        description: 'Clipboard access was denied. Copy the prompt manually.',
+      });
+    });
+
+    expect(copyToClipboardMock).toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('shows an unavailable message when the clipboard API is missing', async () => {
+    fetchPromptsMock.mockResolvedValue([
+      {
+        id: 'prompt-1',
+        title: 'Prompt Alpha',
+        body: 'Generate a report.',
+        tags: ['report'],
+      },
+    ]);
+    const user = userEvent.setup();
+    copyToClipboardMock.mockRejectedValueOnce(new ClipboardUnavailableError());
+
+    renderPromptsPage();
+
+    await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
+    const copyButton = await screen.findByRole('button', { name: 'Copy prompt Prompt Alpha' });
+
+    await user.click(copyButton);
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith({
+        title: 'Copy failed',
+        description: 'Clipboard is unavailable. Copy the prompt manually.',
+      });
+    });
+
+    expect(copyToClipboardMock).toHaveBeenCalled();
   });
 
   it('opens the upgrade dialog when duplicating exceeds plan limits', async () => {

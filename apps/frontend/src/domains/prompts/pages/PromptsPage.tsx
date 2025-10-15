@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import { UpgradeDialog } from '@/components/common/UpgradeDialog';
+import { toast } from '@/components/common/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -17,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ClipboardUnavailableError, copyToClipboard } from '@/lib/clipboard';
 import {
   evaluateIntegerPlanLimit,
   type IntegerPlanLimitEvaluation,
@@ -109,6 +111,7 @@ type PromptListItemRowProps = {
   prompt: PromptListItemData;
   onEdit: (prompt: PromptListItemData) => void;
   onDuplicate: (prompt: PromptListItemData) => void;
+  onCopy: (prompt: PromptListItemData) => void;
   onDelete: (prompt: PromptListItemData) => void;
   disableDelete: boolean;
   disableDuplicate: boolean;
@@ -124,6 +127,7 @@ const PromptListItemRow = ({
   prompt,
   onEdit,
   onDuplicate,
+  onCopy,
   onDelete,
   disableDelete,
   disableDuplicate,
@@ -173,6 +177,16 @@ const PromptListItemRow = ({
               aria-label={`Duplicate prompt ${prompt.title}`}
             >
               Duplicate
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onCopy(prompt)}
+              disabled={prompt.isOptimistic}
+              aria-label={`Copy prompt ${prompt.title}`}
+            >
+              Copy
             </Button>
             <Button
               type="button"
@@ -238,6 +252,13 @@ const buildErrorMessage = (message?: string) =>
 
 const PLAN_LIMIT_ERROR_CODE = 'P0001';
 
+const COPY_SUCCESS_TITLE = 'Prompt copied';
+const COPY_SUCCESS_DESCRIPTION = 'Prompt body copied to clipboard.';
+const COPY_FAILURE_TITLE = 'Copy failed';
+const CLIPBOARD_PERMISSION_FALLBACK_DESCRIPTION = 'Clipboard access was denied. Copy the prompt manually.';
+const CLIPBOARD_UNAVAILABLE_DESCRIPTION = 'Clipboard is unavailable. Copy the prompt manually.';
+const CLIPBOARD_UNKNOWN_ERROR_DESCRIPTION = 'Unable to copy the prompt. Please try again.';
+
 const isPostgrestError = (error: unknown): error is PostgrestError =>
   typeof error === 'object' &&
   error !== null &&
@@ -246,6 +267,18 @@ const isPostgrestError = (error: unknown): error is PostgrestError =>
 
 const isPlanLimitError = (error: unknown): error is PostgrestError =>
   isPostgrestError(error) && (error as PostgrestError).code === PLAN_LIMIT_ERROR_CODE;
+
+const isClipboardPermissionError = (error: unknown) => {
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
+    return error.name === 'NotAllowedError';
+  }
+
+  if (typeof error === 'object' && error !== null && 'name' in error) {
+    return (error as { name?: unknown }).name === 'NotAllowedError';
+  }
+
+  return false;
+};
 
 const buildPlanLimitErrorMessage = (error: PostgrestError) => {
   const sanitize = (value: string | null | undefined) =>
@@ -722,6 +755,39 @@ export const PromptsPage = () => {
     }
   };
 
+  const handlePromptCopyClick = async (prompt: PromptListItemData) => {
+    if (prompt.isOptimistic) {
+      return;
+    }
+
+    try {
+      await copyToClipboard(prompt.body);
+      toast({
+        title: COPY_SUCCESS_TITLE,
+        description: COPY_SUCCESS_DESCRIPTION,
+      });
+    } catch (error) {
+      if (error instanceof ClipboardUnavailableError) {
+        toast({
+          title: COPY_FAILURE_TITLE,
+          description: CLIPBOARD_UNAVAILABLE_DESCRIPTION,
+        });
+        return;
+      }
+
+      if (!isClipboardPermissionError(error)) {
+        console.error(error);
+      }
+
+      toast({
+        title: COPY_FAILURE_TITLE,
+        description: isClipboardPermissionError(error)
+          ? CLIPBOARD_PERMISSION_FALLBACK_DESCRIPTION
+          : CLIPBOARD_UNKNOWN_ERROR_DESCRIPTION,
+      });
+    }
+  };
+
   const handleEditorOpenChange = (open: boolean) => {
     if (!open) {
       setPromptBeingEdited(null);
@@ -1183,6 +1249,7 @@ export const PromptsPage = () => {
               prompt={prompt}
               onEdit={handlePromptEditClick}
               onDuplicate={handlePromptDuplicateClick}
+              onCopy={handlePromptCopyClick}
               onDelete={handlePromptDeleteClick}
               disableDelete={deletePromptMutation.isPending}
               disableDuplicate={duplicatePromptMutation.isPending}
