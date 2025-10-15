@@ -1,4 +1,5 @@
 import { WorkspaceUsageCards } from '@/domains/dashboard/components/WorkspaceUsageCards';
+import { WorkspaceEngagementCards } from '@/domains/dashboard/components/WorkspaceEngagementCards';
 
 export const DashboardPage = () => {
   return (
@@ -8,6 +9,7 @@ export const DashboardPage = () => {
         <p className="text-muted-foreground">Start building your prompt workflows here.</p>
       </div>
       <WorkspaceUsageCards />
+      <WorkspaceEngagementCards />
     </section>
   );
 };
