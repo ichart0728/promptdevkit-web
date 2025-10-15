@@ -244,6 +244,7 @@ export const TeamMemberActions: React.FC<TeamMemberActionsProps> = ({
             description={confirmDescription}
             confirmLabel={removeLabel}
             cancelLabel="Cancel"
+            confirmVariant="destructive"
             isConfirming={removeMemberMutation.isPending}
             onConfirm={handleConfirmRemove}
           />
