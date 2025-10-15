@@ -24,6 +24,7 @@ import {
 } from '../api/promptVersions';
 import type { Workspace } from '@/domains/workspaces/api/workspaces';
 import { PromptCommentsPanel } from './PromptCommentsPanel';
+import { PromptVersionDiffViewer } from './PromptVersionDiffViewer';
 
 const promptEditorSchema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -74,6 +75,7 @@ export const PromptEditorDialog = ({
   const [activeTab, setActiveTab] = React.useState<'edit' | 'history' | 'discussion'>(initialTab);
   const [serverError, setServerError] = React.useState<string | null>(null);
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = React.useState<string | null>(null);
 
   const form = useForm<PromptEditorFormValues>({
     resolver: zodResolver(promptEditorSchema),
@@ -99,9 +101,22 @@ export const PromptEditorDialog = ({
     setActiveTab(initialTab);
     setServerError(null);
     setSuccessMessage(null);
+    setSelectedVersionId(null);
   }, [form, open, prompt, initialTab]);
 
   const promptId = prompt?.id ?? null;
+
+  React.useEffect(() => {
+    if (!promptId) {
+      setSelectedVersionId(null);
+    }
+  }, [promptId]);
+
+  React.useEffect(() => {
+    if (!open) {
+      setSelectedVersionId(null);
+    }
+  }, [open]);
   const promptVersionsQuery = useQuery({
     queryKey: promptVersionsQueryKey(promptId),
     queryFn: () => {
@@ -114,6 +129,27 @@ export const PromptEditorDialog = ({
     enabled: open && activeTab === 'history' && !!promptId,
     staleTime: 60 * 1000,
   });
+
+  React.useEffect(() => {
+    if (promptVersionsQuery.status !== 'success') {
+      return;
+    }
+
+    const versions = (promptVersionsQuery.data ?? []) as PromptVersion[];
+
+    if (!versions.length) {
+      setSelectedVersionId(null);
+      return;
+    }
+
+    setSelectedVersionId((current) => {
+      if (current && versions.some((version) => version.id === current)) {
+        return current;
+      }
+
+      return versions[0].id;
+    });
+  }, [promptVersionsQuery.data, promptVersionsQuery.status]);
 
   const updatePromptMutation = useMutation({
     mutationFn: async (values: PromptEditorFormValues) => {
@@ -311,37 +347,85 @@ export const PromptEditorDialog = ({
       return <p className="text-sm text-muted-foreground">No versions found for this prompt yet.</p>;
     }
 
+    const selectedVersion =
+      versions.find((version) => version.id === selectedVersionId) ?? versions[0] ?? null;
+
+    const selectedIndex = selectedVersion
+      ? versions.findIndex((version) => version.id === selectedVersion.id)
+      : -1;
+    const previousVersion =
+      selectedIndex >= 0 && selectedIndex + 1 < versions.length
+        ? versions[selectedIndex + 1]
+        : null;
+
     return (
-      <ul className="space-y-3">
-        {versions.map((version) => (
-          <li key={version.id} className="rounded-md border p-3 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-medium">Version {version.version}</span>
-              <span className="text-xs text-muted-foreground">{formatTimestamp(version.createdAt)}</span>
-            </div>
-            <p className="text-xs text-muted-foreground">Updated by {version.updatedBy}</p>
-            {version.restoredFromVersion ? (
-              <p className="text-xs text-muted-foreground">
-                Restored from version {version.restoredFromVersion}
-              </p>
-            ) : null}
-            <div className="mt-3 flex justify-end">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => handleRestoreVersion(version.version)}
-                disabled={restorePromptVersionMutation.isPending}
-              >
-                {restorePromptVersionMutation.isPending &&
-                restorePromptVersionMutation.variables?.version === version.version
-                  ? 'Restoring…'
-                  : 'Restore'}
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div className="grid gap-4 lg:grid-cols-[minmax(240px,280px),1fr]">
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Select a version to preview the changes.
+          </p>
+          <ul className="space-y-3" aria-label="Prompt version history">
+            {versions.map((version) => {
+              const isSelected = selectedVersion?.id === version.id;
+
+              return (
+                <li
+                  key={version.id}
+                  className={`rounded-md border p-3 text-sm transition focus-within:ring-2 focus-within:ring-primary ${
+                    isSelected ? 'border-primary ring-1 ring-primary' : 'border-border'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    className={`w-full text-left ${isSelected ? 'font-semibold' : 'font-medium'}`}
+                    aria-pressed={isSelected}
+                    onClick={() => setSelectedVersionId(version.id)}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span>Version {version.version}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatTimestamp(version.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Updated by {version.updatedBy}</p>
+                    {version.restoredFromVersion ? (
+                      <p className="text-xs text-muted-foreground">
+                        Restored from version {version.restoredFromVersion}
+                      </p>
+                    ) : null}
+                  </button>
+                  <div className="mt-3 flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      aria-label={`Restore version ${version.version}`}
+                      onClick={() => handleRestoreVersion(version.version)}
+                      disabled={restorePromptVersionMutation.isPending}
+                    >
+                      {restorePromptVersionMutation.isPending &&
+                      restorePromptVersionMutation.variables?.version === version.version
+                        ? 'Restoring…'
+                        : 'Restore'}
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <div className="min-h-[240px]">
+          {selectedVersion ? (
+            <PromptVersionDiffViewer
+              currentVersion={selectedVersion}
+              previousVersion={previousVersion}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Select a version to view its changes.</p>
+          )}
+        </div>
+      </div>
     );
   };
 
