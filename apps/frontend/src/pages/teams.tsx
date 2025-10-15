@@ -4,9 +4,15 @@ import { useQuery } from '@tanstack/react-query';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { teamsQueryOptions } from '@/domains/teams/api/teams';
 import { TeamMemberActions } from '@/domains/teams/components/TeamMemberActions';
+import { TeamMemberListControls } from '@/domains/teams/components/TeamMemberListControls';
+import {
+  filterTeamMembers,
+  type TeamMemberRoleFilter,
+} from '@/domains/teams/components/team-member-filters';
 import { TeamInviteForm } from '@/domains/teams/components/TeamInviteForm';
 import { TeamPlanUsageBanner } from '@/domains/teams/components/TeamPlanUsageBanner';
 import { workspacesQueryOptions } from '@/domains/workspaces/api/workspaces';
+import type { Team } from '@/domains/teams/api/teams';
 
 const PLAN_LABELS: Record<string, string> = {
   free: 'Free',
@@ -19,6 +25,127 @@ const getPlanLabel = (planId: string | null) => {
   }
 
   return PLAN_LABELS[planId] ?? planId;
+};
+
+type TeamWorkspace = { id: string; name: string };
+
+type TeamCardProps = {
+  team: Team;
+  planLabel: string;
+  userId: string;
+  workspaces: TeamWorkspace[];
+  isWorkspacesLoading: boolean;
+  workspacesError: boolean;
+};
+
+const TeamCard: React.FC<TeamCardProps> = ({
+  team,
+  planLabel,
+  userId,
+  workspaces,
+  isWorkspacesLoading,
+  workspacesError,
+}) => {
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [selectedRole, setSelectedRole] = React.useState<TeamMemberRoleFilter>('all');
+
+  const currentMembership = React.useMemo(
+    () => team.members.find((member) => member.user?.id === userId) ?? null,
+    [team.members, userId],
+  );
+
+  const currentUserRole = currentMembership?.role ?? null;
+
+  const availableRoles = React.useMemo(() => {
+    const uniqueRoles = new Set(team.members.map((member) => member.role));
+    return Array.from(uniqueRoles);
+  }, [team.members]);
+
+  const filteredMembers = React.useMemo(
+    () => filterTeamMembers(team.members, searchQuery, selectedRole),
+    [team.members, searchQuery, selectedRole],
+  );
+
+  return (
+    <article className="rounded-lg border bg-card text-card-foreground shadow-sm">
+      <header className="flex flex-col gap-4 border-b px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">{team.name}</h2>
+          <p className="text-sm text-muted-foreground">
+            {team.members.length} {team.members.length === 1 ? 'member' : 'members'}
+          </p>
+        </div>
+        <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-primary">
+          {planLabel}
+        </span>
+      </header>
+      <div className="border-b px-6 py-4">
+        <TeamPlanUsageBanner team={team} planLabel={planLabel} />
+      </div>
+      <div className="grid gap-6 px-6 py-5 md:grid-cols-2">
+        <section aria-label={`${team.name} members`} className="space-y-4">
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold uppercase text-muted-foreground">Members</h3>
+            <TeamMemberListControls
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              selectedRole={selectedRole}
+              onSelectedRoleChange={setSelectedRole}
+              availableRoles={availableRoles}
+            />
+          </div>
+          {filteredMembers.length > 0 ? (
+            <ul className="space-y-3">
+              {filteredMembers.map((member) => (
+                <li
+                  key={member.id}
+                  className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-medium">{member.user?.name ?? 'Unknown member'}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {member.user?.email ?? 'Contact information unavailable'}
+                    </p>
+                  </div>
+                  <TeamMemberActions
+                    teamId={team.id}
+                    teamName={team.name}
+                    member={member}
+                    currentUserId={userId}
+                    currentUserRole={currentUserRole}
+                  />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No members match your filters.</p>
+          )}
+          {currentUserRole === 'admin' ? (
+            <TeamInviteForm team={team} currentUserId={userId} />
+          ) : null}
+        </section>
+        <section aria-label={`${team.name} shared workspaces`} className="space-y-3">
+          <h3 className="text-sm font-semibold uppercase text-muted-foreground">Shared workspaces</h3>
+          {isWorkspacesLoading ? (
+            <p className="text-sm text-muted-foreground">Loading shared workspaces…</p>
+          ) : workspacesError ? (
+            <p className="text-sm text-destructive">Failed to load shared workspaces. Please try again.</p>
+          ) : workspaces.length > 0 ? (
+            <ul className="space-y-3">
+              {workspaces.map((workspace) => (
+                <li key={workspace.id} className="rounded-md border p-3">
+                  <p className="font-medium">{workspace.name}</p>
+                  <p className="text-sm text-muted-foreground">Team workspace</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No shared workspaces yet.</p>
+          )}
+        </section>
+      </div>
+    </article>
+  );
 };
 
 export const TeamsPage = () => {
@@ -158,77 +285,18 @@ export const TeamsPage = () => {
       <div className="space-y-6">
         {teams.map((team) => {
           const planLabel = getPlanLabel(team.planId);
-          const members = team.members;
-          const currentMembership = members.find((member) => member.user?.id === userId) ?? null;
-          const currentUserRole = currentMembership?.role ?? null;
           const workspaces = teamWorkspaces.get(team.id) ?? [];
 
           return (
-            <article key={team.id} className="rounded-lg border bg-card text-card-foreground shadow-sm">
-              <header className="flex flex-col gap-4 border-b px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">{team.name}</h2>
-                  <p className="text-sm text-muted-foreground">
-                    {members.length} {members.length === 1 ? 'member' : 'members'}
-                  </p>
-                </div>
-                <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-wide text-primary">
-                  {planLabel}
-                </span>
-              </header>
-              <div className="border-b px-6 py-4">
-                <TeamPlanUsageBanner team={team} planLabel={planLabel} />
-              </div>
-              <div className="grid gap-6 px-6 py-5 md:grid-cols-2">
-                <section aria-label={`${team.name} members`} className="space-y-3">
-                  <h3 className="text-sm font-semibold uppercase text-muted-foreground">Members</h3>
-                  <ul className="space-y-3">
-                    {members.map((member) => (
-                      <li
-                        key={member.id}
-                        className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div>
-                          <p className="font-medium">{member.user?.name ?? 'Unknown member'}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {member.user?.email ?? 'Contact information unavailable'}
-                          </p>
-                        </div>
-                        <TeamMemberActions
-                          teamId={team.id}
-                          teamName={team.name}
-                          member={member}
-                          currentUserId={userId}
-                          currentUserRole={currentUserRole}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                  {currentUserRole === 'admin' ? (
-                    <TeamInviteForm team={team} currentUserId={userId} />
-                  ) : null}
-                </section>
-                <section aria-label={`${team.name} shared workspaces`} className="space-y-3">
-                  <h3 className="text-sm font-semibold uppercase text-muted-foreground">Shared workspaces</h3>
-                  {isWorkspacesLoading ? (
-                    <p className="text-sm text-muted-foreground">Loading shared workspaces…</p>
-                  ) : workspacesError ? (
-                    <p className="text-sm text-destructive">Failed to load shared workspaces. Please try again.</p>
-                  ) : workspaces.length > 0 ? (
-                    <ul className="space-y-3">
-                      {workspaces.map((workspace) => (
-                        <li key={workspace.id} className="rounded-md border p-3">
-                          <p className="font-medium">{workspace.name}</p>
-                          <p className="text-sm text-muted-foreground">Team workspace</p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No shared workspaces yet.</p>
-                  )}
-                </section>
-              </div>
-            </article>
+            <TeamCard
+              key={team.id}
+              team={team}
+              planLabel={planLabel}
+              userId={userId}
+              workspaces={workspaces}
+              isWorkspacesLoading={isWorkspacesLoading}
+              workspacesError={workspacesError}
+            />
           );
         })}
       </div>
