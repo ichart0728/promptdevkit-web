@@ -93,10 +93,10 @@ export const fetchWorkspaceUsage = async (): Promise<WorkspaceUsage[]> => {
       `
         id,
         type,
-        owner_user:users!workspaces_owner_user_id_fkey(
+        owner_user:users!workspaces_owner_fk(
           user_plan:user_plans(plan_id)
         ),
-        team:teams!workspaces_team_id_fkey(
+        team:teams!workspaces_team_fk(
           created_by_user:users!teams_created_by_fkey(
             user_plan:user_plans(plan_id)
           )
