@@ -536,19 +536,19 @@ describe('PromptsPage', () => {
     });
   });
 
-  it('applies tag filters from the prompt list and allows clearing them', async () => {
+  it('applies tag filters from the prompt list, toggles them, and supports clearing', async () => {
     fetchPromptsMock.mockResolvedValue([
       {
         id: 'prompt-1',
         title: 'Prompt Alpha',
         body: 'Generate a report.',
-        tags: ['meeting', 'summary'],
+        tags: ['Meeting', 'Summary'],
       },
       {
         id: 'prompt-2',
         title: 'Prompt Beta',
         body: 'Summarize the meeting notes.',
-        tags: ['summary'],
+        tags: ['Summary'],
       },
     ]);
     const user = userEvent.setup();
@@ -558,16 +558,16 @@ describe('PromptsPage', () => {
     await screen.findByRole('heading', { level: 3, name: 'Prompt Alpha' });
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled();
 
-    await user.click(screen.getByRole('button', { name: 'Filter by tag meeting' }));
+    await user.click(screen.getByRole('button', { name: 'Filter by tag Meeting' }));
 
-    const navigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
-    expect(navigateArgument).toMatchObject({ to: '.', replace: true });
-    if (!navigateArgument || typeof navigateArgument.search !== 'function') {
+    const firstNavigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
+    expect(firstNavigateArgument).toMatchObject({ to: '.', replace: true });
+    if (!firstNavigateArgument || typeof firstNavigateArgument.search !== 'function') {
       throw new Error('Expected navigate search reducer to be a function.');
     }
 
-    const nextSearchState = navigateArgument.search(currentSearchState);
-    expect(nextSearchState).toEqual({
+    const searchAfterFirstClick = firstNavigateArgument.search(currentSearchState);
+    expect(searchAfterFirstClick).toEqual({
       q: undefined,
       tags: ['meeting'],
       promptId: undefined,
@@ -575,7 +575,7 @@ describe('PromptsPage', () => {
     });
 
     await act(async () => {
-      currentSearchState = nextSearchState;
+      currentSearchState = searchAfterFirstClick;
       useSearchMock.mockImplementation(() => currentSearchState);
       rerender(
         <QueryClientProvider client={queryClient}>
@@ -591,10 +591,66 @@ describe('PromptsPage', () => {
       expect(screen.getByRole('button', { name: 'Clear filters' })).not.toBeDisabled();
     });
 
-    navigateSpy.mockClear();
+    await user.click(screen.getByRole('button', { name: 'Filter by tag Summary' }));
 
-    await user.click(screen.getByRole('button', { name: 'Filter by tag meeting' }));
-    expect(navigateSpy).not.toHaveBeenCalled();
+    const secondNavigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
+    expect(secondNavigateArgument).toMatchObject({ to: '.', replace: true });
+    if (!secondNavigateArgument || typeof secondNavigateArgument.search !== 'function') {
+      throw new Error('Expected navigate search reducer to be a function.');
+    }
+
+    const searchAfterSecondClick = secondNavigateArgument.search(searchAfterFirstClick);
+    expect(searchAfterSecondClick).toEqual({
+      q: undefined,
+      tags: ['meeting', 'summary'],
+      promptId: undefined,
+      threadId: undefined,
+    });
+
+    await act(async () => {
+      currentSearchState = searchAfterSecondClick;
+      useSearchMock.mockImplementation(() => currentSearchState);
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <PromptsPage />
+        </QueryClientProvider>,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Tags (comma separated)')).toHaveValue('meeting, summary');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Filter by tag Meeting' }));
+
+    const thirdNavigateArgument = navigateSpy.mock.calls.at(-1)?.[0];
+    expect(thirdNavigateArgument).toMatchObject({ to: '.', replace: true });
+    if (!thirdNavigateArgument || typeof thirdNavigateArgument.search !== 'function') {
+      throw new Error('Expected navigate search reducer to be a function.');
+    }
+
+    const searchAfterRemoval = thirdNavigateArgument.search(searchAfterSecondClick);
+    expect(searchAfterRemoval).toEqual({
+      q: undefined,
+      tags: ['summary'],
+      promptId: undefined,
+      threadId: undefined,
+    });
+
+    await act(async () => {
+      currentSearchState = searchAfterRemoval;
+      useSearchMock.mockImplementation(() => currentSearchState);
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <PromptsPage />
+        </QueryClientProvider>,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Tags (comma separated)')).toHaveValue('summary');
+    });
+    expect(screen.getByRole('button', { name: 'Clear filters' })).not.toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
 
@@ -604,12 +660,28 @@ describe('PromptsPage', () => {
       throw new Error('Expected navigate search reducer to be a function.');
     }
 
-    expect(clearNavigateArgument.search(currentSearchState)).toEqual({
+    expect(clearNavigateArgument.search(searchAfterRemoval)).toEqual({
       q: undefined,
       tags: undefined,
       promptId: undefined,
       threadId: undefined,
+      commentId: undefined,
     });
+
+    await act(async () => {
+      currentSearchState = {};
+      useSearchMock.mockImplementation(() => currentSearchState);
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <PromptsPage />
+        </QueryClientProvider>,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Tags (comma separated)')).toHaveValue('');
+    });
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled();
   });
 
   it('opens the prompt editor to the discussion tab when mention params are present', async () => {

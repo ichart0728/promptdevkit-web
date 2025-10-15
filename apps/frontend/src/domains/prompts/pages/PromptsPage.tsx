@@ -986,6 +986,7 @@ export const PromptsPage = () => {
           tags: normalizedTags.length > 0 ? normalizedTags : undefined,
           promptId: undefined,
           threadId: undefined,
+          commentId: undefined,
         }),
         replace: true,
       });
@@ -993,36 +994,69 @@ export const PromptsPage = () => {
     [navigate],
   );
 
-  const handleFiltersSubmit = filtersForm.handleSubmit((values) => {
-    const parsedFilters: PromptFiltersSubmitValues = promptFiltersSubmitSchema.parse(values);
-    syncFiltersToSearch(parsedFilters);
-  });
+  const applyFiltersFromFieldValues = React.useCallback(
+    (fieldValues: PromptFiltersFieldValues) => {
+      const parsedFilters: PromptFiltersSubmitValues = promptFiltersSubmitSchema.parse(fieldValues);
+      syncFiltersToSearch(parsedFilters);
+    },
+    [syncFiltersToSearch],
+  );
+
+  const handleFiltersSubmit = filtersForm.handleSubmit(applyFiltersFromFieldValues);
 
   const handleFiltersReset = () => {
-    filtersForm.reset({ q: '', tags: '' });
-    syncFiltersToSearch({ q: '', tags: [] });
+    const resetValues: PromptFiltersFieldValues = { q: '', tags: '' };
+    filtersForm.reset(resetValues);
+    applyFiltersFromFieldValues(resetValues);
   };
 
   const handleTagClick = React.useCallback(
     (tag: string) => {
-      const normalizedTag = tag.trim();
+      const normalizedTag = tag.trim().toLowerCase();
 
       if (normalizedTag.length === 0) {
         return;
       }
 
-      const nextTags = normalizeSearchTags([...searchTags, normalizedTag]);
-      const hasChanged =
-        nextTags.length !== searchTags.length ||
-        nextTags.some((nextTag, index) => nextTag !== searchTags[index]);
+      const currentFieldValues = filtersForm.getValues();
+      const parsedFieldValues = promptFiltersFieldSchema.safeParse(currentFieldValues);
+      const baseFieldValues = parsedFieldValues.success
+        ? parsedFieldValues.data
+        : { q: rawSearchQuery, tags: searchTags.join(', ') };
+      const currentSubmitValues: PromptFiltersSubmitValues = promptFiltersSubmitSchema.parse(
+        baseFieldValues,
+      );
 
-      if (!hasChanged) {
+      const isTagActive = currentSubmitValues.tags.includes(normalizedTag);
+      const nextTags = isTagActive
+        ? currentSubmitValues.tags.filter((existingTag) => existingTag !== normalizedTag)
+        : normalizeSearchTags([...currentSubmitValues.tags, normalizedTag]);
+
+      if (
+        nextTags.length === currentSubmitValues.tags.length &&
+        nextTags.every((value, index) => value === currentSubmitValues.tags[index])
+      ) {
         return;
       }
 
-      syncFiltersToSearch({ q: rawSearchQuery, tags: nextTags });
+      const nextFieldValues: PromptFiltersFieldValues = {
+        q: currentSubmitValues.q,
+        tags: nextTags.join(', '),
+      };
+
+      filtersForm.setValue('q', nextFieldValues.q, {
+        shouldDirty: false,
+        shouldTouch: false,
+      });
+      filtersForm.setValue('tags', nextFieldValues.tags, {
+        shouldDirty: false,
+        shouldTouch: false,
+      });
+      filtersForm.clearErrors();
+
+      applyFiltersFromFieldValues(nextFieldValues);
     },
-    [rawSearchQuery, searchTags, syncFiltersToSearch],
+    [applyFiltersFromFieldValues, filtersForm, rawSearchQuery, searchTags],
   );
 
   const handleSubmit = form.handleSubmit(async (values) => {
