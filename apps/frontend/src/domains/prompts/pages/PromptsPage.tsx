@@ -986,6 +986,7 @@ export const PromptsPage = () => {
           tags: normalizedTags.length > 0 ? normalizedTags : undefined,
           promptId: undefined,
           threadId: undefined,
+          commentId: undefined,
         }),
         replace: true,
       });
