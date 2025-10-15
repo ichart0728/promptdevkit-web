@@ -12,6 +12,10 @@ vi.mock('@/domains/workspaces/components/ManageWorkspaceDialog', () => ({
   ManageWorkspaceDialog: () => manageDialogMock(),
 }));
 
+vi.mock('./WorkspaceQuickSwitcher', () => ({
+  WorkspaceQuickSwitcher: () => <div data-testid="workspace-quick-switcher" />,
+}));
+
 type ContextValue = ComponentProps<typeof WorkspaceContext.Provider>['value'];
 
 const baseContext: ContextValue = {
@@ -80,6 +84,7 @@ describe('WorkspaceSwitcher', () => {
 
     expect(setActiveWorkspaceId).toHaveBeenCalledWith('workspace-2');
     expect(manageDialogMock).toHaveBeenCalled();
+    expect(screen.getByTestId('workspace-quick-switcher')).toBeInTheDocument();
   });
 
   it('shows the active archived workspace so it can be restored', () => {

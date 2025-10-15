@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { ManageWorkspaceDialog } from '@/domains/workspaces/components/ManageWorkspaceDialog';
 import { useWorkspaceContext } from '@/domains/workspaces/contexts/WorkspaceContext';
 
-const formatWorkspaceLabel = (name: string, type: 'personal' | 'team') =>
-  type === 'team' ? `${name} (Team)` : `${name} (Personal)`;
+import { formatWorkspaceLabel } from './workspace-label';
+import { WorkspaceQuickSwitcher } from './WorkspaceQuickSwitcher';
 
 export const WorkspaceSwitcher = () => {
   const { workspaces, activeWorkspace, setActiveWorkspaceId, isLoading, isError, error, refetch, hasSession } =
@@ -81,6 +81,11 @@ export const WorkspaceSwitcher = () => {
           })}
         </select>
       </label>
+      <WorkspaceQuickSwitcher
+        workspaces={selectableWorkspaces}
+        activeWorkspaceId={activeWorkspace?.id ?? null}
+        onSelect={setActiveWorkspaceId}
+      />
       <ManageWorkspaceDialog />
     </div>
   );
