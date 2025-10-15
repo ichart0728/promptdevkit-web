@@ -134,6 +134,7 @@ const createMutationResult = (
   ({
     mutate: vi.fn(),
     mutateAll: vi.fn(),
+    mutateMentions: vi.fn(),
     isPending: false,
     isMutatingAll: false,
     markAllError: null,
@@ -190,6 +191,58 @@ describe('NotificationsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Mark all as read' }));
 
     expect(mutateAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks only mention notifications as read when the filter is set to mentions', async () => {
+    const user = userEvent.setup();
+    const mutateAll = vi.fn();
+    const mutateMentions = vi.fn();
+
+    mockedUseNotificationsQuery.mockReturnValue(
+      createQueryResult({
+        data: {
+          pages: [
+            [
+              createNotification({
+                id: 'mention-1',
+                type: 'mention',
+                read_at: null,
+                payload: {
+                  title: 'Mentioned in prompt',
+                  message: 'Unread mention',
+                  prompt_id: 'prompt-42',
+                } as NotificationItem['payload'],
+              }),
+              createNotification({
+                id: 'mention-2',
+                type: 'mention',
+                read_at: '2024-01-21T10:00:00.000Z',
+                payload: {
+                  title: 'Mention already read',
+                  message: 'Read mention',
+                  prompt_id: 'prompt-43',
+                } as NotificationItem['payload'],
+              }),
+            ],
+          ],
+          pageParams: [0],
+        },
+      }),
+    );
+    mockedUseNotificationReadMutation.mockReturnValue(
+      createMutationResult({ mutateAll, mutateMentions }),
+    );
+
+    renderNotificationsPage();
+
+    await act(async () => {
+      await user.click(screen.getByTestId('notifications-filter-mentions'));
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Mark mentions as read' }));
+
+    expect(mutateMentions).toHaveBeenCalledTimes(1);
+    expect(mutateAll).not.toHaveBeenCalled();
   });
 
   it('filters notifications by unread and mentions modes', async () => {

@@ -95,6 +95,11 @@ export const NotificationsPage = () => {
       return;
     }
 
+    if (filter === 'mentions') {
+      readMutation.mutateMentions();
+      return;
+    }
+
     readMutation.mutateAll();
   };
 

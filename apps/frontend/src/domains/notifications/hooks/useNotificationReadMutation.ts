@@ -114,11 +114,65 @@ export const useNotificationReadMutation = (userId: string | null) => {
     },
   });
 
+  const markMentionsMutation = useMutation({
+    mutationFn: async () => {
+      if (!resolvedUserId) {
+        throw new Error('User ID is required to update notifications.');
+      }
+
+      const readAt = new Date().toISOString();
+
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read_at: readAt } as never)
+        .eq('user_id', resolvedUserId)
+        .eq('type', 'mention')
+        .is('read_at', null);
+
+      if (error) {
+        const mutationError = error as MutationError;
+
+        if (mutationError.code === 'P0001') {
+          throw new Error('You do not have permission to mark mention notifications as read.');
+        }
+
+        throw error;
+      }
+
+      return readAt;
+    },
+    onSuccess: (readAt) => {
+      queryClient.setQueryData(queryKey, (previous: NotificationsInfiniteData | undefined) => {
+        if (!previous) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          pages: previous.pages.map((page) =>
+            page.map((notification) =>
+              notification.type === 'mention' && !notification.read_at
+                ? { ...notification, read_at: readAt }
+                : notification,
+            ),
+          ),
+        };
+      });
+    },
+    onSettled: () => {
+      if (resolvedUserId) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+
   return {
     ...toggleMutation,
     mutateAll: markAllMutation.mutate,
     mutateAllAsync: markAllMutation.mutateAsync,
-    isMutatingAll: markAllMutation.isPending,
-    markAllError: markAllMutation.error,
+    mutateMentions: markMentionsMutation.mutate,
+    mutateMentionsAsync: markMentionsMutation.mutateAsync,
+    isMutatingAll: markAllMutation.isPending || markMentionsMutation.isPending,
+    markAllError: markAllMutation.error ?? markMentionsMutation.error,
   };
 };
