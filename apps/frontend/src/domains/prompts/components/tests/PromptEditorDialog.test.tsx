@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, type InfiniteData } from '@tanstack/react-query';
 import { vi } from 'vitest';
@@ -228,8 +228,8 @@ describe('PromptEditorDialog', () => {
       expect(fetchPromptVersionsMock).toHaveBeenCalledWith({ promptId: 'prompt-1' });
     });
 
-    expect(await screen.findByText('Version 2')).toBeInTheDocument();
-    expect(screen.getByText(/Updated by user-2/)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Version 2/ })).toBeInTheDocument();
+    expect(screen.getByText(/Select a version to preview the changes/)).toBeInTheDocument();
   });
 
   it('shows a loading state while versions are fetching', async () => {
@@ -310,7 +310,7 @@ describe('PromptEditorDialog', () => {
       expect(fetchPromptVersionsMock).toHaveBeenCalledWith({ promptId: 'prompt-1' });
     });
 
-    const restoreButton = await screen.findByRole('button', { name: 'Restore' });
+    const restoreButton = await screen.findByRole('button', { name: 'Restore version 2' });
 
     await user.click(restoreButton);
 
@@ -351,6 +351,54 @@ describe('PromptEditorDialog', () => {
     });
 
     confirmSpy.mockRestore();
+  });
+
+  it('displays a diff preview for the selected version', async () => {
+    fetchPromptVersionsMock.mockResolvedValue([
+      {
+        id: 'version-2',
+        promptId: 'prompt-1',
+        version: 2,
+        title: 'Weekly summary v2',
+        body: 'Summarize updates with a cheerful tone.',
+        note: 'Mention product highlights first.',
+        tags: ['summary', 'team'],
+        updatedBy: 'user-2',
+        restoredFromVersion: 1,
+        createdAt: '2024-06-01T12:00:00.000Z',
+      },
+      {
+        id: 'version-1',
+        promptId: 'prompt-1',
+        version: 1,
+        title: 'Weekly summary',
+        body: 'Summarize the weekly updates for the product team.',
+        note: 'Keep responses short.',
+        tags: ['summary', 'weekly'],
+        updatedBy: 'user-1',
+        restoredFromVersion: null,
+        createdAt: '2024-05-28T08:00:00.000Z',
+      },
+    ]);
+
+    const { user } = renderPromptEditor();
+
+    await user.click(screen.getByRole('tab', { name: 'History' }));
+
+    const bodyDiff = await screen.findByRole('region', { name: 'Prompt body diff' });
+    expect(bodyDiff).toBeInTheDocument();
+
+    const addedLine = within(bodyDiff).getByText('Summarize updates with a cheerful tone.');
+    expect(addedLine.previousElementSibling?.textContent).toBe('+');
+
+    const removedLine = within(bodyDiff).getByText('Summarize the weekly updates for the product team.');
+    expect(removedLine.previousElementSibling?.textContent).toBe('−');
+
+    const noteDiff = screen.getByRole('region', { name: 'Internal note diff' });
+    const addedNote = within(noteDiff).getByText('Mention product highlights first.');
+    expect(addedNote.previousElementSibling?.textContent).toBe('+');
+    const removedNote = within(noteDiff).getByText('Keep responses short.');
+    expect(removedNote.previousElementSibling?.textContent).toBe('−');
   });
 
   it('loads discussions when switching to the discussion tab', async () => {
@@ -458,12 +506,14 @@ describe('PromptEditorDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Post comment' }));
 
     await waitFor(() => {
-      expect(createCommentMock).toHaveBeenCalledWith({
-        promptId: 'prompt-1',
-        threadId: 'thread-1',
-        userId: 'user-1',
-        body: 'Nice work!',
-      });
+      expect(createCommentMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          promptId: 'prompt-1',
+          threadId: 'thread-1',
+          userId: 'user-1',
+          body: 'Nice work!',
+        }),
+      );
     });
 
     await waitFor(() => {
