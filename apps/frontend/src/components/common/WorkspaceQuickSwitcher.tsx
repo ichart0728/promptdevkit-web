@@ -36,6 +36,7 @@ const isTypingTarget = (target: EventTarget | null) => {
 
 export const WorkspaceQuickSwitcher = ({ workspaces, activeWorkspaceId, onSelect }: WorkspaceQuickSwitcherProps) => {
   const [isOpen, setIsOpen] = React.useState(false);
+  const dialogContentId = React.useId();
 
   const handleSelect = React.useCallback(
     (workspaceId: string) => {
@@ -86,7 +87,8 @@ export const WorkspaceQuickSwitcher = ({ workspaces, activeWorkspaceId, onSelect
         variant="outline"
         aria-haspopup="dialog"
         aria-expanded={isOpen}
-        aria-controls="workspace-quick-switcher"
+        aria-controls={dialogContentId}
+        aria-keyshortcuts="Control+K Meta+K"
         onClick={() => setIsOpen(true)}
       >
         Quick switch
@@ -100,7 +102,7 @@ export const WorkspaceQuickSwitcher = ({ workspaces, activeWorkspaceId, onSelect
         onOpenChange={handleOpenChange}
         label="Workspace quick switcher"
         description="Search for a workspace and press enter to switch"
-        contentProps={{ id: 'workspace-quick-switcher' }}
+        contentProps={{ id: dialogContentId }}
       >
         <CommandInput placeholder="Search workspaces..." autoFocus />
         <CommandList>
@@ -115,7 +117,7 @@ export const WorkspaceQuickSwitcher = ({ workspaces, activeWorkspaceId, onSelect
                 return (
                   <CommandItem
                     key={workspace.id}
-                    value={`${workspace.name} ${workspace.type}`}
+                    value={`${label}${isArchived ? ' archived' : ''}`}
                     onSelect={() => handleSelect(workspace.id)}
                     aria-current={isActive}
                   >

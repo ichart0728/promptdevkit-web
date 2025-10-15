@@ -20,8 +20,7 @@ class ResizeObserverMock {
 }
 
 beforeAll(() => {
-  // @ts-ignore -- jsdom does not provide ResizeObserver by default
-  global.ResizeObserver = ResizeObserverMock;
+  global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
   Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
     value: vi.fn(),
@@ -44,6 +43,16 @@ describe('WorkspaceQuickSwitcher', () => {
     expect(screen.queryByRole('dialog', { name: 'Workspace quick switcher' })).not.toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+
+    expect(screen.getByRole('dialog', { name: 'Workspace quick switcher' })).toBeInTheDocument();
+  });
+
+  it('opens the palette when the command key shortcut is pressed on macOS', () => {
+    render(<WorkspaceQuickSwitcher workspaces={workspaces} activeWorkspaceId={null} onSelect={vi.fn()} />);
+
+    expect(screen.queryByRole('dialog', { name: 'Workspace quick switcher' })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
 
     expect(screen.getByRole('dialog', { name: 'Workspace quick switcher' })).toBeInTheDocument();
   });
@@ -72,5 +81,11 @@ describe('WorkspaceQuickSwitcher', () => {
 
     expect(onSelect).toHaveBeenCalledWith('workspace-2');
     expect(screen.queryByRole('dialog', { name: 'Workspace quick switcher' })).not.toBeInTheDocument();
+  });
+
+  it('exposes its keyboard shortcut via aria-keyshortcuts', () => {
+    render(<WorkspaceQuickSwitcher workspaces={workspaces} activeWorkspaceId={null} onSelect={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: /quick switch/i })).toHaveAttribute('aria-keyshortcuts', 'Control+K Meta+K');
   });
 });
