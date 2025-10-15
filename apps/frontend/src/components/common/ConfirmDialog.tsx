@@ -16,6 +16,7 @@ export type ConfirmDialogProps = {
   description?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  confirmVariant?: React.ComponentProps<typeof Button>['variant'];
   isConfirming?: boolean;
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
@@ -27,6 +28,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   description,
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
+  confirmVariant = 'default',
   isConfirming = false,
   onConfirm,
   onOpenChange,
@@ -35,6 +37,13 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   const handleCancel = React.useCallback(() => {
     onOpenChange(false);
   }, [onOpenChange]);
+  const handleConfirm = React.useCallback(() => {
+    if (isConfirming) {
+      return;
+    }
+
+    onConfirm();
+  }, [isConfirming, onConfirm]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -50,10 +59,16 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           )}
         </DialogHeader>
         <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button variant="outline" onClick={handleCancel} disabled={isConfirming}>
+          <Button type="button" variant="outline" onClick={handleCancel} disabled={isConfirming}>
             {cancelLabel}
           </Button>
-          <Button onClick={onConfirm} disabled={isConfirming} autoFocus>
+          <Button
+            type="button"
+            variant={confirmVariant}
+            onClick={handleConfirm}
+            disabled={isConfirming}
+            autoFocus
+          >
             {confirmLabel}
           </Button>
         </DialogFooter>
