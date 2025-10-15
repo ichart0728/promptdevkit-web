@@ -524,6 +524,45 @@ describe('PromptCommentsPanel - mention highlighting', () => {
       expect(listItem).not.toHaveAttribute('data-highlighted');
     });
   });
+
+  it('clears the highlight when the initial comment ID is removed', async () => {
+    let renderResult: ReturnType<typeof renderPanel> | undefined;
+
+    await act(async () => {
+      renderResult = renderPanel({
+        initialThreadId: 'thread-1',
+        initialCommentId: 'comment-1',
+        highlightDurationMs: 5000,
+      });
+    });
+
+    const { rerender, queryClient } = renderResult!;
+
+    const commentBody = await screen.findByText('Initial comment body');
+    const listItem = commentBody.closest('li');
+    expect(listItem).not.toBeNull();
+
+    await waitFor(() => {
+      expect(listItem).toHaveAttribute('data-highlighted', 'true');
+    });
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <PromptCommentsPanel
+          promptId="prompt-1"
+          userId="user-1"
+          workspaceId="workspace-1"
+          initialThreadId="thread-1"
+          initialCommentId={null}
+          highlightDurationMs={5000}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(listItem).not.toHaveAttribute('data-highlighted');
+    });
+  });
 });
 
 describe('PromptCommentsPanel - mentions', () => {
