@@ -30,22 +30,33 @@ import {
   MEMBERS_PER_TEAM_LIMIT_KEY,
 } from '../utils/planLimitMessaging';
 
+const ROLE_VALUES = ['viewer', 'editor', 'admin'] as const;
+
+const ROLE_OPTIONS = [
+  { value: ROLE_VALUES[0], label: 'Viewer' },
+  { value: ROLE_VALUES[1], label: 'Editor' },
+  { value: ROLE_VALUES[2], label: 'Admin' },
+] as const;
+
 const baseSchema = z.object({
   email: z
     .string({ required_error: 'Email is required.' })
     .min(1, 'Email is required.')
     .email('Enter a valid email address.')
     .transform((value) => value.trim().toLowerCase()),
+  role: z.enum(ROLE_VALUES),
 });
 
 type TeamInviteFormValues = z.infer<typeof baseSchema>;
 
 const DEFAULT_VALUES: TeamInviteFormValues = {
   email: '',
+  role: 'viewer',
 };
 
 type InviteVariables = {
   email: string;
+  role: TeamInviteFormValues['role'];
 };
 
 type TeamInviteFormProps = {
@@ -56,6 +67,7 @@ type TeamInviteFormProps = {
 export const TeamInviteForm: React.FC<TeamInviteFormProps> = ({ team, currentUserId }) => {
   const queryClient = useQueryClient();
   const inputId = React.useId();
+  const roleInputId = React.useId();
   const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [lastEvaluation, setLastEvaluation] = React.useState<IntegerPlanLimitEvaluation | null>(null);
 
@@ -144,8 +156,8 @@ export const TeamInviteForm: React.FC<TeamInviteFormProps> = ({ team, currentUse
   const isAtCapacity = seatStatus === 'at-capacity';
 
   const inviteMutation = useMutation({
-    mutationFn: async ({ email }: InviteVariables) =>
-      inviteTeamMember({ teamId: team.id, email, role: 'viewer' }),
+    mutationFn: async ({ email, role }: InviteVariables) =>
+      inviteTeamMember({ teamId: team.id, email, role }),
     onSuccess: (member, variables) => {
       form.reset(DEFAULT_VALUES);
       toast({
@@ -211,6 +223,7 @@ export const TeamInviteForm: React.FC<TeamInviteFormProps> = ({ team, currentUse
 
     inviteMutation.mutate({
       email: normalizedEmail,
+      role: values.role,
     });
   });
 
@@ -234,12 +247,15 @@ export const TeamInviteForm: React.FC<TeamInviteFormProps> = ({ team, currentUse
     ],
   );
 
+  const selectedRole = form.watch('role');
+
   return (
     <div className="space-y-4 rounded-md border p-4">
       <div className="space-y-1">
         <h3 className="text-sm font-semibold uppercase text-muted-foreground">Invite members</h3>
         <p className="text-sm text-muted-foreground">
-          Add teammates by email. New members join as viewers and can be promoted later.
+          Add teammates by email and choose the role they will have when they join. You can update it
+          later from the member list.
         </p>
       </div>
 
@@ -279,6 +295,31 @@ export const TeamInviteForm: React.FC<TeamInviteFormProps> = ({ team, currentUse
               {form.formState.errors.email.message}
             </p>
           ) : null}
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor={roleInputId}>
+            Role
+          </label>
+          <select
+            id={roleInputId}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 sm:w-auto"
+            disabled={isSubmitting || isAtCapacity}
+            {...form.register('role')}
+          >
+            {ROLE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            They&apos;ll be invited as{' '}
+            <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
+              {ROLE_OPTIONS.find((option) => option.value === selectedRole)?.label ?? 'Viewer'}
+            </span>
+            {'.'}
+          </p>
         </div>
 
         {form.formState.errors.root ? (
