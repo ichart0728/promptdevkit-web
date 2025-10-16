@@ -127,6 +127,32 @@ WITH prompt_seed AS (
         '2024-01-06 11:00:00+00'::timestamptz,
         '2024-01-06 11:00:00+00'::timestamptz,
         NULL::timestamptz
+      ),
+      (
+        '4a6d7c1e-0d0f-41d9-9d9b-8a2b0481212a'::uuid,
+        '0c93a3c6-7c5b-4f24-a413-2b142a4b6aaf'::uuid,
+        'Retired Personal Prompt'::text,
+        'Legacy workflow prompt retained for reference.'::text,
+        'Superseded by a newer prompt version'::text,
+        ARRAY['archived', 'personal']::text[],
+        '11111111-1111-4111-8111-111111111111'::uuid,
+        '11111111-1111-4111-8111-111111111111'::uuid,
+        '2024-01-10 08:30:00+00'::timestamptz,
+        '2024-02-15 09:45:00+00'::timestamptz,
+        '2024-03-15 12:00:00+00'::timestamptz
+      ),
+      (
+        '8bf0f4c7-9a5d-477c-b4d4-fdf1e3c950f2'::uuid,
+        'c5b8f4d2-4d8c-4f2e-8f5d-199d6dbd6f90'::uuid,
+        'Deprecated Team Prompt'::text,
+        'Outline an announcement for legacy features scheduled for removal.'::text,
+        'Deprecated template stored in trash'::text,
+        ARRAY['team', 'archived']::text[],
+        '22222222-2222-4222-8222-222222222222'::uuid,
+        '22222222-2222-4222-8222-222222222222'::uuid,
+        '2024-01-12 14:00:00+00'::timestamptz,
+        '2024-03-10 16:20:00+00'::timestamptz,
+        '2024-03-18 08:30:00+00'::timestamptz
       )
   ) AS t(
     id,
