@@ -18,3 +18,5 @@ LEFT JOIN public.comments AS c
   ON c.thread_id = ct.id
   AND c.deleted_at IS NULL
 GROUP BY w.id, w.name;
+
+GRANT SELECT ON public.workspace_comment_engagement TO authenticated;
