@@ -46,3 +46,25 @@ SET
   payload = EXCLUDED.payload,
   read_at = EXCLUDED.read_at,
   created_at = EXCLUDED.created_at;
+
+INSERT INTO public.notification_preferences (user_id, allow_mentions, updated_at)
+VALUES
+  (
+    '11111111-1111-4111-8111-111111111111',
+    true,
+    '2024-01-15 10:05:00+00'
+  ),
+  (
+    '22222222-2222-4222-8222-222222222222',
+    true,
+    '2024-01-16 10:05:00+00'
+  ),
+  (
+    '33333333-3333-4333-8333-333333333333',
+    true,
+    '2024-01-16 11:05:00+00'
+  )
+ON CONFLICT (user_id) DO UPDATE
+SET
+  allow_mentions = EXCLUDED.allow_mentions,
+  updated_at = EXCLUDED.updated_at;
