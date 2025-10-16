@@ -5,6 +5,8 @@ import { toast } from '@/components/common/toast';
 import { router } from '@/app/router';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
+import { useNotificationPreferencesQuery } from '@/domains/notifications/hooks/useNotificationPreferencesQuery';
+import { useUpdateNotificationPreferencesMutation } from '@/domains/notifications/hooks/useUpdateNotificationPreferencesMutation';
 import type { NotificationItem } from '@/domains/notifications/types';
 import {
   countUnreadNotifications,
@@ -43,6 +45,14 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
   const menuId = useId();
   const tooltipId = useId();
   const {
+    data: preferences,
+    error: preferencesError,
+    isError: isPreferencesError,
+    isPending: isPreferencesPending,
+    refetch: refetchPreferences,
+  } = useNotificationPreferencesQuery(userId);
+  const updatePreferencesMutation = useUpdateNotificationPreferencesMutation(userId);
+  const {
     data,
     error,
     fetchNextPage,
@@ -56,6 +66,8 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
   const readMutation = useNotificationReadMutation(userId);
 
   const notifications = useMemo(() => flattenNotificationPages(data?.pages), [data?.pages]);
+
+  const allowMentions = preferences?.allowMentions ?? true;
 
   const unreadCount = useMemo(() => countUnreadNotifications(notifications), [notifications]);
   const unreadMentionCount = useMemo(
@@ -310,6 +322,61 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
               </Button>
             </div>
           ) : null}
+          <div className="border-t border-border px-4 py-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Mention alerts</p>
+                  <p className="text-xs text-muted-foreground">
+                    {allowMentions ? 'Mentions are enabled.' : 'Mentions are muted.'}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  disabled={
+                    isPreferencesPending ||
+                    updatePreferencesMutation.isPending ||
+                    isPreferencesError
+                  }
+                  onClick={() =>
+                    updatePreferencesMutation.mutate({ allowMentions: !allowMentions })
+                  }
+                >
+                  {updatePreferencesMutation.isPending
+                    ? 'Saving…'
+                    : allowMentions
+                      ? 'Turn off'
+                      : 'Turn on'}
+                </Button>
+              </div>
+              {isPreferencesError ? (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs text-destructive" role="alert">
+                    {preferencesError instanceof Error
+                      ? preferencesError.message
+                      : 'Failed to load notification settings.'}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    type="button"
+                    onClick={() => void refetchPreferences()}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : null}
+              {updatePreferencesMutation.error ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {updatePreferencesMutation.error instanceof Error
+                    ? updatePreferencesMutation.error.message
+                    : 'Failed to update notification settings.'}
+                </p>
+              ) : null}
+            </div>
+          </div>
           <div className={`px-4 py-2 ${hasNextPage ? 'border-t border-border' : ''}`}>
             <Button size="sm" variant="link" className="px-0" onClick={() => void handleNavigateToPage()}>
               View all
