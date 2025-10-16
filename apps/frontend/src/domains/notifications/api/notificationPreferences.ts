@@ -13,6 +13,15 @@ export type NotificationPreferences = {
   isDefault: boolean;
 };
 
+const createDefaultNotificationPreferences = (
+  userId: string,
+): NotificationPreferences => ({
+  userId,
+  allowMentions: true,
+  updatedAt: null,
+  isDefault: true,
+});
+
 const mapRowToPreferences = (row: NotificationPreferencesRow): NotificationPreferences => ({
   userId: row.user_id,
   allowMentions: row.allow_mentions,
@@ -37,12 +46,7 @@ export const fetchNotificationPreferences = async (
   }
 
   if (!data) {
-    return {
-      userId,
-      allowMentions: true,
-      updatedAt: null,
-      isDefault: true,
-    };
+    return createDefaultNotificationPreferences(userId);
   }
 
   return mapRowToPreferences(data);
@@ -55,9 +59,10 @@ export type UpdateNotificationPreferencesParams = {
 export const updateNotificationPreferences = async ({
   allowMentions,
 }: UpdateNotificationPreferencesParams): Promise<NotificationPreferences> => {
-  const { data, error } = await supabase.rpc('set_notification_preferences', {
-    p_allow_mentions: allowMentions,
-  } as never);
+  const { data, error } = await supabase.rpc(
+    'set_notification_preferences',
+    { p_allow_mentions: allowMentions } as never,
+  );
 
   if (error) {
     throw error;
