@@ -6,6 +6,8 @@ import type { NotificationItem } from '@/domains/notifications/types';
 import { router } from '@/app/router';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
+import { useNotificationPreferencesQuery } from '@/domains/notifications/hooks/useNotificationPreferencesQuery';
+import { useUpdateNotificationPreferencesMutation } from '@/domains/notifications/hooks/useUpdateNotificationPreferencesMutation';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -22,10 +24,16 @@ vi.mock('@/lib/supabase', () => ({
 
 vi.mock('@/domains/notifications/hooks/useNotificationsQuery');
 vi.mock('@/domains/notifications/hooks/useNotificationReadMutation');
+vi.mock('@/domains/notifications/hooks/useNotificationPreferencesQuery');
+vi.mock('@/domains/notifications/hooks/useUpdateNotificationPreferencesMutation');
 vi.mock('@/components/common/toast', () => ({ toast: vi.fn() }));
 
 const mockedUseNotificationsQuery = vi.mocked(useNotificationsQuery);
 const mockedUseNotificationReadMutation = vi.mocked(useNotificationReadMutation);
+const mockedUseNotificationPreferencesQuery = vi.mocked(useNotificationPreferencesQuery);
+const mockedUseUpdateNotificationPreferencesMutation = vi.mocked(
+  useUpdateNotificationPreferencesMutation,
+);
 
 const createNotification = (overrides: Partial<NotificationItem> = {}): NotificationItem => ({
   id: 'notification-1',
@@ -64,6 +72,35 @@ const createMutationResult = (
     ...overrides,
   } as unknown as ReturnType<typeof useNotificationReadMutation>);
 
+const createPreferencesQueryResult = (
+  overrides: Partial<ReturnType<typeof useNotificationPreferencesQuery>> = {},
+): ReturnType<typeof useNotificationPreferencesQuery> =>
+  ({
+    data: {
+      userId: '11111111-1111-4111-8111-111111111111',
+      allowMentions: true,
+      updatedAt: null,
+      isDefault: false,
+    },
+    error: null,
+    isError: false,
+    isPending: false,
+    refetch: vi.fn(),
+    ...overrides,
+  } as unknown as ReturnType<typeof useNotificationPreferencesQuery>);
+
+const createPreferencesMutationResult = (
+  overrides: Partial<ReturnType<typeof useUpdateNotificationPreferencesMutation>> = {},
+): ReturnType<typeof useUpdateNotificationPreferencesMutation> =>
+  ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    error: null,
+    isSuccess: false,
+    ...overrides,
+  } as unknown as ReturnType<typeof useUpdateNotificationPreferencesMutation>);
+
 const renderMenu = () => render(<NotificationsMenu userId="11111111-1111-4111-8111-111111111111" />);
 
 describe('NotificationsMenu', () => {
@@ -71,6 +108,10 @@ describe('NotificationsMenu', () => {
     vi.clearAllMocks();
     mockedUseNotificationsQuery.mockReturnValue(createQueryResult());
     mockedUseNotificationReadMutation.mockReturnValue(createMutationResult());
+    mockedUseNotificationPreferencesQuery.mockReturnValue(createPreferencesQueryResult());
+    mockedUseUpdateNotificationPreferencesMutation.mockReturnValue(
+      createPreferencesMutationResult(),
+    );
     vi.spyOn(router, 'navigate').mockResolvedValue(
       undefined as Awaited<ReturnType<typeof router.navigate>>,
     );
@@ -192,5 +233,31 @@ describe('NotificationsMenu', () => {
       search: { promptId: 'prompt-42', threadId: 'thread-9', commentId: 'comment-33' },
     });
     expect(mutate).toHaveBeenCalledWith({ id: 'mention-1', read: true });
+  });
+
+  it('toggles mention notifications from the menu', async () => {
+    const user = userEvent.setup();
+    const mutatePreferences = vi.fn();
+
+    mockedUseNotificationPreferencesQuery.mockReturnValue(
+      createPreferencesQueryResult({
+        data: {
+          userId: '11111111-1111-4111-8111-111111111111',
+          allowMentions: true,
+          updatedAt: null,
+          isDefault: false,
+        },
+      }),
+    );
+    mockedUseUpdateNotificationPreferencesMutation.mockReturnValue(
+      createPreferencesMutationResult({ mutate: mutatePreferences }),
+    );
+
+    renderMenu();
+
+    await user.click(screen.getByRole('button', { name: 'Notifications' }));
+    await user.click(screen.getByRole('button', { name: 'Turn off' }));
+
+    expect(mutatePreferences).toHaveBeenCalledWith({ allowMentions: false });
   });
 });

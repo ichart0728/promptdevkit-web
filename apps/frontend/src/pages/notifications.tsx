@@ -6,6 +6,8 @@ import { router } from '@/app/router';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
+import { useNotificationPreferencesQuery } from '@/domains/notifications/hooks/useNotificationPreferencesQuery';
+import { useUpdateNotificationPreferencesMutation } from '@/domains/notifications/hooks/useUpdateNotificationPreferencesMutation';
 import type { NotificationItem } from '@/domains/notifications/types';
 import {
   countUnreadMentionNotifications,
@@ -23,6 +25,14 @@ export const NotificationsPage = () => {
   const { data: session, isPending: isSessionPending } = useSessionQuery();
   const userId = session?.user?.id ?? null;
   const {
+    data: preferences,
+    error: preferencesError,
+    isError: isPreferencesError,
+    isPending: isPreferencesPending,
+    refetch: refetchPreferences,
+  } = useNotificationPreferencesQuery(userId);
+  const updatePreferencesMutation = useUpdateNotificationPreferencesMutation(userId);
+  const {
     data,
     error,
     fetchNextPage,
@@ -36,6 +46,21 @@ export const NotificationsPage = () => {
 
   const notifications = useMemo(() => flattenNotificationPages(data?.pages), [data?.pages]);
   const [filter, setFilter] = useState<NotificationFilter>('all');
+  const [allowMentions, setAllowMentions] = useState(true);
+  const preferenceAllowMentions = preferences?.allowMentions;
+
+  useEffect(() => {
+    if (typeof preferenceAllowMentions !== 'boolean') {
+      return;
+    }
+
+    setAllowMentions(preferenceAllowMentions);
+  }, [preferenceAllowMentions]);
+
+  const hasPreferenceChanges =
+    typeof preferenceAllowMentions === 'boolean'
+      ? allowMentions !== preferenceAllowMentions
+      : false;
 
   const unreadCount = useMemo(() => countUnreadNotifications(notifications), [notifications]);
   const unreadMentionsCount = useMemo(
@@ -88,6 +113,18 @@ export const NotificationsPage = () => {
 
   const handleToggleRead = (notificationId: string, isRead: boolean) => {
     readMutation.mutate({ id: notificationId, read: !isRead });
+  };
+
+  const handleSavePreferences = () => {
+    if (
+      isPreferencesPending ||
+      updatePreferencesMutation.isPending ||
+      typeof preferenceAllowMentions !== 'boolean'
+    ) {
+      return;
+    }
+
+    updatePreferencesMutation.mutate({ allowMentions });
   };
 
   const handleMarkAllAsRead = () => {
@@ -192,6 +229,85 @@ export const NotificationsPage = () => {
           </Button>
         </div>
       </div>
+      <section className="rounded-lg border border-border bg-card p-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold text-foreground">Notification settings</h2>
+            <p className="text-sm text-muted-foreground">
+              Choose how we notify you when someone mentions you.
+            </p>
+            {isPreferencesError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {preferencesError instanceof Error
+                  ? preferencesError.message
+                  : 'Failed to load notification settings.'}
+              </p>
+            ) : null}
+            {updatePreferencesMutation.error ? (
+              <p className="text-sm text-destructive" role="alert">
+                {updatePreferencesMutation.error instanceof Error
+                  ? updatePreferencesMutation.error.message
+                  : 'Failed to save notification settings.'}
+              </p>
+            ) : null}
+            {updatePreferencesMutation.isSuccess && !hasPreferenceChanges ? (
+              <p className="text-xs text-muted-foreground" role="status">
+                Preferences saved.
+              </p>
+            ) : null}
+          </div>
+          <div className="flex max-w-sm flex-col items-start gap-3 sm:items-end">
+            <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border border-border"
+                checked={allowMentions}
+                onChange={(event) => setAllowMentions(event.target.checked)}
+                disabled={isPreferencesPending || updatePreferencesMutation.isPending}
+              />
+              Allow mention notifications
+            </label>
+            <p className="text-xs text-muted-foreground">
+              {allowMentions
+                ? 'Receive alerts when teammates mention you. Turn this off to silence mention notifications.'
+                : 'Mentions will stop sending alerts, but you can still find them in the notifications list.'}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSavePreferences}
+                disabled={!hasPreferenceChanges || updatePreferencesMutation.isPending || isPreferencesPending}
+              >
+                {updatePreferencesMutation.isPending ? 'Saving…' : 'Save changes'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!hasPreferenceChanges || updatePreferencesMutation.isPending}
+                onClick={() => {
+                  if (typeof preferenceAllowMentions === 'boolean') {
+                    setAllowMentions(preferenceAllowMentions);
+                  }
+                }}
+              >
+                Reset
+              </Button>
+              {isPreferencesError ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void refetchPreferences()}
+                >
+                  Retry
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </section>
       {readMutation.markAllError ? (
         <div className="rounded-md border border-destructive/60 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
           {readMutation.markAllError instanceof Error

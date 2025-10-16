@@ -65,6 +65,66 @@ exports[`NotificationsPage > matches the snapshot for the notifications list 1`]
         </button>
       </div>
     </div>
+    <section
+      class="rounded-lg border border-border bg-card p-4"
+    >
+      <div
+        class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+      >
+        <div
+          class="space-y-2"
+        >
+          <h2
+            class="text-lg font-semibold text-foreground"
+          >
+            Notification settings
+          </h2>
+          <p
+            class="text-sm text-muted-foreground"
+          >
+            Choose how we notify you when someone mentions you.
+          </p>
+        </div>
+        <div
+          class="flex max-w-sm flex-col items-start gap-3 sm:items-end"
+        >
+          <label
+            class="flex items-center gap-2 text-sm font-medium text-foreground"
+          >
+            <input
+              checked=""
+              class="h-4 w-4 rounded border border-border"
+              disabled=""
+              type="checkbox"
+            />
+            Allow mention notifications
+          </label>
+          <p
+            class="text-xs text-muted-foreground"
+          >
+            Receive alerts when teammates mention you. Turn this off to silence mention notifications.
+          </p>
+          <div
+            class="flex flex-wrap items-center gap-2"
+          >
+            <button
+              class="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 rounded-md px-3"
+              disabled=""
+              type="button"
+            >
+              Save changes
+            </button>
+            <button
+              class="inline-flex items-center justify-center whitespace-nowrap text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 rounded-md px-3"
+              disabled=""
+              type="button"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
     <div
       class="space-y-4"
     >
