@@ -99,6 +99,7 @@ DECLARE
   v_plan_id text := 'plan_' || substr(gen_random_uuid()::text, 1, 8);
   v_author_id uuid := gen_random_uuid();
   v_target_id uuid := gen_random_uuid();
+  v_instance_id uuid;
   v_workspace_id uuid;
   v_prompt_id uuid;
   v_thread_id uuid;
@@ -106,6 +107,16 @@ DECLARE
   v_blocked_comment_id uuid;
   v_notification_count integer;
 BEGIN
+  SELECT id
+  INTO v_instance_id
+  FROM auth.instances
+  ORDER BY created_at
+  LIMIT 1;
+
+  IF v_instance_id IS NULL THEN
+    v_instance_id := '00000000-0000-0000-0000-000000000000'::uuid;
+  END IF;
+
   INSERT INTO public.plans (id, name)
   VALUES (v_plan_id, 'Test plan');
 
@@ -116,6 +127,78 @@ BEGIN
     (v_plan_id, 'prompt_versions_per_prompt', 5, 'test'),
     (v_plan_id, 'comment_threads_per_prompt', 5, 'test'),
     (v_plan_id, 'comments_per_thread', 5, 'test');
+
+  INSERT INTO auth.users (
+    id,
+    instance_id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    invited_at,
+    confirmation_sent_at,
+    confirmation_token,
+    recovery_token,
+    email_change,
+    email_change_sent_at,
+    email_change_token_current,
+    email_change_token_new,
+    created_at,
+    updated_at,
+    last_sign_in_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    is_super_admin
+  )
+  VALUES
+    (
+      v_author_id,
+      v_instance_id,
+      'authenticated',
+      'authenticated',
+      'author-' || v_plan_id || '@example.com',
+      crypt('RegressionAuthor1!', gen_salt('bf')),
+      now(),
+      now(),
+      now(),
+      'reg-author-confirm-' || v_plan_id,
+      'reg-author-recover-' || v_plan_id,
+      ''::text,
+      NULL,
+      'reg-author-ecc-' || v_plan_id,
+      'reg-author-ecn-' || v_plan_id,
+      now(),
+      now(),
+      now(),
+      jsonb_build_object('provider', 'email', 'providers', ARRAY['email']),
+      jsonb_build_object('name', 'Author ' || v_plan_id),
+      false
+    ),
+    (
+      v_target_id,
+      v_instance_id,
+      'authenticated',
+      'authenticated',
+      'target-' || v_plan_id || '@example.com',
+      crypt('RegressionTarget1!', gen_salt('bf')),
+      now(),
+      now(),
+      now(),
+      'reg-target-confirm-' || v_plan_id,
+      'reg-target-recover-' || v_plan_id,
+      ''::text,
+      NULL,
+      'reg-target-ecc-' || v_plan_id,
+      'reg-target-ecn-' || v_plan_id,
+      now(),
+      now(),
+      now(),
+      jsonb_build_object('provider', 'email', 'providers', ARRAY['email']),
+      jsonb_build_object('name', 'Target ' || v_plan_id),
+      false
+    )
+  ON CONFLICT (id) DO NOTHING;
 
   INSERT INTO public.users (id, email, name)
   VALUES
@@ -178,6 +261,7 @@ BEGIN
   DELETE FROM public.user_plans WHERE user_id = v_author_id;
   DELETE FROM public.notification_preferences WHERE user_id = v_target_id;
   DELETE FROM public.users WHERE id IN (v_author_id, v_target_id);
+  DELETE FROM auth.users WHERE id IN (v_author_id, v_target_id);
   DELETE FROM public.plan_limits WHERE plan_id = v_plan_id;
   DELETE FROM public.plans WHERE id = v_plan_id;
 END;
