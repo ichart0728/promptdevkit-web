@@ -78,13 +78,68 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
         >
           <section
             aria-label="Prompt Builders members"
-            class="space-y-3"
+            class="space-y-4"
           >
-            <h3
-              class="text-sm font-semibold uppercase text-muted-foreground"
+            <div
+              class="space-y-2"
             >
-              Members
-            </h3>
+              <h3
+                class="text-sm font-semibold uppercase text-muted-foreground"
+              >
+                Members
+              </h3>
+              <div
+                class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"
+              >
+                <div
+                  class="flex w-full flex-col gap-2 sm:max-w-xs"
+                >
+                  <label
+                    class="text-sm font-medium"
+                    for=":r3:"
+                  >
+                    Search members
+                  </label>
+                  <input
+                    class="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    id=":r3:"
+                    placeholder="Search by name or email"
+                    type="search"
+                    value=""
+                  />
+                </div>
+                <div
+                  class="flex w-full flex-col gap-2 sm:max-w-xs"
+                >
+                  <label
+                    class="text-sm font-medium"
+                    for=":r4:"
+                  >
+                    Filter by role
+                  </label>
+                  <select
+                    class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    id=":r4:"
+                  >
+                    <option
+                      value="all"
+                    >
+                      All roles
+                    </option>
+                    <option
+                      value="admin"
+                    >
+                      Admin
+                    </option>
+                    <option
+                      value="editor"
+                    >
+                      Editor
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
             <ul
               class="space-y-3"
             >
@@ -111,14 +166,14 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
                   >
                     <label
                       class="sr-only"
-                      for=":r3:"
+                      for=":r5:"
                     >
                       Role
                     </label>
                     <select
                       aria-label="Role"
                       class="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                      id=":r3:"
+                      id=":r5:"
                     >
                       <option
                         disabled=""
@@ -169,14 +224,14 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
                   >
                     <label
                       class="sr-only"
-                      for=":r4:"
+                      for=":ra:"
                     >
                       Role
                     </label>
                     <select
                       aria-label="Role"
                       class="h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                      id=":r4:"
+                      id=":ra:"
                     >
                       <option
                         value="viewer"
@@ -217,7 +272,7 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
                 <p
                   class="text-sm text-muted-foreground"
                 >
-                  Add teammates by email. New members join as viewers and can be promoted later.
+                  Add teammates by email and choose the role they will have when they join. You can update it later from the member list.
                 </p>
               </div>
               <p
@@ -234,24 +289,66 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
                 >
                   <label
                     class="text-sm font-medium"
-                    for=":r5:"
+                    for=":rf:"
                   >
                     Email address
                   </label>
                   <input
-                    aria-describedby=":r5:-error"
+                    aria-describedby=":rf:-error"
                     autocomplete="email"
                     class="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    id=":r5:"
+                    id=":rf:"
                     name="email"
                     placeholder="teammate@example.com"
                     type="email"
                   />
                   <p
                     class="text-xs text-destructive"
-                    id=":r5:-error"
+                    id=":rf:-error"
                   >
                     Email is required.
+                  </p>
+                </div>
+                <div
+                  class="space-y-2"
+                >
+                  <label
+                    class="text-sm font-medium"
+                    for=":rg:"
+                  >
+                    Role
+                  </label>
+                  <select
+                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 sm:w-auto"
+                    id=":rg:"
+                    name="role"
+                  >
+                    <option
+                      value="viewer"
+                    >
+                      Viewer
+                    </option>
+                    <option
+                      value="editor"
+                    >
+                      Editor
+                    </option>
+                    <option
+                      value="admin"
+                    >
+                      Admin
+                    </option>
+                  </select>
+                  <p
+                    class="text-xs text-muted-foreground"
+                  >
+                    They'll be invited as 
+                    <span
+                      class="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground"
+                    >
+                      Viewer
+                    </span>
+                    .
                   </p>
                 </div>
                 <button

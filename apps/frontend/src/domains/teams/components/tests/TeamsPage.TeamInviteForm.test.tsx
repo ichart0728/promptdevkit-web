@@ -128,6 +128,7 @@ describe('TeamsPage / TeamInviteForm', () => {
 
     const user = userEvent.setup();
     const emailInput = await screen.findByLabelText('Email address');
+    const roleSelect = await screen.findByLabelText('Role');
 
     await user.type(emailInput, 'new.member@example.com');
     await user.click(screen.getByRole('button', { name: 'Send invite' }));
@@ -147,6 +148,45 @@ describe('TeamsPage / TeamInviteForm', () => {
         description: 'Invitation sent to New Member.',
       });
       expect(emailInput).toHaveValue('');
+      expect(roleSelect).toHaveValue('viewer');
+    });
+  });
+
+  it('allows selecting a role before inviting', async () => {
+    inviteTeamMemberMock.mockResolvedValue({
+      id: 'member-3',
+      role: 'admin',
+      joinedAt: '2024-01-03T00:00:00.000Z',
+      user: {
+        id: 'user-3',
+        email: 'role.member@example.com',
+        name: 'Role Member',
+        avatarUrl: null,
+      },
+    });
+
+    renderInviteForm();
+
+    const user = userEvent.setup();
+    const emailInput = await screen.findByLabelText('Email address');
+    const roleSelect = await screen.findByLabelText('Role');
+
+    const roleSummary = screen.getByText("They'll be invited as", { exact: false });
+    expect(roleSummary).toHaveTextContent("They'll be invited as Viewer.");
+
+    await user.selectOptions(roleSelect, 'admin');
+    expect(roleSelect).toHaveValue('admin');
+    expect(roleSummary).toHaveTextContent("They'll be invited as Admin.");
+
+    await user.type(emailInput, 'role.member@example.com');
+    await user.click(screen.getByRole('button', { name: 'Send invite' }));
+
+    await waitFor(() => {
+      expect(inviteTeamMemberMock).toHaveBeenCalledWith({
+        teamId: 'team-1',
+        email: 'role.member@example.com',
+        role: 'admin',
+      });
     });
   });
 
