@@ -9,6 +9,7 @@ import type { Prompt } from '@/domains/prompts/api/prompts';
 import type { PromptEditorDialogProps } from '../components/PromptEditorDialog';
 import { PromptsPage } from './PromptsPage';
 import { fetchPrompts, createPrompt, deletePrompt, duplicatePrompt } from '@/domains/prompts/api/prompts';
+import { fetchTrashedPrompts, purgePrompt, restorePrompt } from '@/domains/prompts/api/promptTrash';
 import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimits';
 import { fetchPromptFavorite, togglePromptFavorite } from '@/domains/prompts/api/promptFavorites';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
@@ -41,6 +42,13 @@ vi.mock('@/domains/prompts/api/prompts', () => ({
   createPrompt: vi.fn(),
   deletePrompt: vi.fn(),
   duplicatePrompt: vi.fn(),
+}));
+
+vi.mock('@/domains/prompts/api/promptTrash', () => ({
+  trashedPromptsQueryKey: (workspaceId: string) => ['prompts', workspaceId, 'trash'] as const,
+  fetchTrashedPrompts: vi.fn(),
+  restorePrompt: vi.fn(),
+  purgePrompt: vi.fn(),
 }));
 
 vi.mock('@/domains/prompts/api/planLimits', () => ({
@@ -81,6 +89,9 @@ const fetchPromptsMock = vi.mocked(fetchPrompts);
 const createPromptMock = vi.mocked(createPrompt);
 const deletePromptMock = vi.mocked(deletePrompt);
 const duplicatePromptMock = vi.mocked(duplicatePrompt);
+const fetchTrashedPromptsMock = vi.mocked(fetchTrashedPrompts);
+const restorePromptMock = vi.mocked(restorePrompt);
+const purgePromptMock = vi.mocked(purgePrompt);
 const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
 const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
 const fetchPromptFavoriteMock = vi.mocked(fetchPromptFavorite);
@@ -137,6 +148,17 @@ const teamWorkspace = {
   archivedAt: null,
 };
 
+const trashedPromptFixture = {
+  id: 'trashed-1',
+  title: 'Deprecated prompt',
+  note: 'Legacy note',
+  tags: ['legacy'],
+  deletedAt: '2025-01-02T00:00:00.000Z',
+  updatedAt: '2025-01-01T00:00:00.000Z',
+  workspaceId: personalWorkspace.id,
+  workspaceName: personalWorkspace.name,
+};
+
 let activeWorkspaceRef: { current: typeof personalWorkspace | typeof teamWorkspace | null };
 let currentSearchState: {
   q?: string;
@@ -158,6 +180,15 @@ describe('PromptsPage', () => {
     useActiveWorkspaceMock.mockImplementation(() => activeWorkspaceRef.current);
     fetchUserPlanIdMock.mockResolvedValue('free');
     deletePromptMock.mockResolvedValue('prompt-1');
+    fetchTrashedPromptsMock.mockResolvedValue([]);
+    restorePromptMock.mockResolvedValue({
+      id: 'restored-prompt',
+      title: 'Restored prompt',
+      body: 'Restored body',
+      tags: [],
+      note: null,
+    });
+    purgePromptMock.mockResolvedValue('prompt-1');
     fetchPlanLimitsMock.mockResolvedValue({
       prompts_per_personal_ws: {
         key: 'prompts_per_personal_ws',
@@ -1138,5 +1169,99 @@ describe('PromptsPage workspace awareness', () => {
     await screen.findByText('Team workspace');
     expect(fetchPromptsMock).toHaveBeenLastCalledWith({ workspace: teamWorkspace });
     await screen.findByText('Current usage in Team Space: 0 of 1 prompts');
+  });
+
+  it('loads trashed prompts when the trash tab is selected', async () => {
+    const user = userEvent.setup();
+    fetchPromptsMock.mockResolvedValue([]);
+    fetchTrashedPromptsMock.mockResolvedValueOnce([trashedPromptFixture]);
+
+    renderPromptsPage();
+
+    await screen.findByText('Workspace prompts · Personal Space');
+
+    await user.click(screen.getByRole('button', { name: 'Trash' }));
+
+    await waitFor(() => {
+      expect(fetchTrashedPromptsMock).toHaveBeenCalledWith({ workspaceId: personalWorkspace.id });
+    });
+
+    expect(screen.getByText(trashedPromptFixture.title)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show favorites only' })).not.toBeInTheDocument();
+    expect(screen.getByText('Query key: ["prompts", "workspace-1", "trash"]')).toBeInTheDocument();
+  });
+
+  it('restores a trashed prompt back to the active list', async () => {
+    const user = userEvent.setup();
+    fetchPromptsMock.mockResolvedValue([]);
+    fetchTrashedPromptsMock.mockResolvedValueOnce([trashedPromptFixture]);
+    fetchTrashedPromptsMock.mockResolvedValue([]);
+    const restoredPrompt = {
+      id: trashedPromptFixture.id,
+      title: 'Restored from trash',
+      body: 'Recovered body',
+      tags: [],
+      note: null,
+    } satisfies Prompt;
+    restorePromptMock.mockResolvedValue(restoredPrompt);
+
+    renderPromptsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Trash' }));
+
+    const restoreButton = await screen.findByRole('button', {
+      name: `Restore prompt ${trashedPromptFixture.title}`,
+    });
+
+    await user.click(restoreButton);
+
+    await waitFor(() => {
+      expect(restorePromptMock).toHaveBeenCalledWith({ promptId: trashedPromptFixture.id });
+    });
+
+    await waitFor(() => {
+      expect(fetchTrashedPromptsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Prompt restored',
+        description: expect.stringContaining(trashedPromptFixture.title),
+      }),
+    );
+  });
+
+  it('purges a trashed prompt after confirmation', async () => {
+    const user = userEvent.setup();
+    fetchPromptsMock.mockResolvedValue([]);
+    fetchTrashedPromptsMock.mockResolvedValueOnce([trashedPromptFixture]);
+    fetchTrashedPromptsMock.mockResolvedValue([]);
+    purgePromptMock.mockResolvedValue(trashedPromptFixture.id);
+
+    renderPromptsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Trash' }));
+
+    const purgeButton = await screen.findByRole('button', {
+      name: `Delete prompt ${trashedPromptFixture.title} permanently`,
+    });
+
+    await user.click(purgeButton);
+
+    await screen.findByRole('dialog', { name: 'Delete permanently' });
+
+    await user.click(screen.getByRole('button', { name: 'Delete permanently' }));
+
+    await waitFor(() => {
+      expect(purgePromptMock).toHaveBeenCalledWith({ promptId: trashedPromptFixture.id });
+    });
+
+    await waitFor(() => {
+      expect(fetchTrashedPromptsMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Prompt deleted permanently' }),
+    );
   });
 });

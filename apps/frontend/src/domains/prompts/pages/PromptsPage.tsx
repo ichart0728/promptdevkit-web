@@ -35,6 +35,13 @@ import {
   promptsQueryKey,
   type Prompt,
 } from '../api/prompts';
+import {
+  fetchTrashedPrompts,
+  purgePrompt,
+  restorePrompt,
+  trashedPromptsQueryKey,
+  type TrashedPrompt,
+} from '../api/promptTrash';
 import { PromptEditorDialog } from '../components/PromptEditorDialog';
 import {
   fetchPlanLimits,
@@ -88,6 +95,8 @@ type PromptFavoritesMap = Record<string, boolean>;
 
 const EMPTY_FAVORITES_MAP: PromptFavoritesMap = {};
 
+type TrashedPromptListItemData = TrashedPrompt;
+
 type PromptsSearchParams = {
   q?: string;
   tags?: string[] | string;
@@ -105,6 +114,18 @@ type OptimisticContext = {
 type DeleteOptimisticContext = {
   previousPrompts: PromptListItemData[];
   queryKey: ReturnType<typeof promptsQueryKey>;
+};
+
+type RestoreOptimisticContext = {
+  previousTrash: TrashedPromptListItemData[];
+  previousActive: PromptListItemData[];
+  trashQueryKey: QueryKey;
+  activeQueryKey: QueryKey;
+};
+
+type PurgeOptimisticContext = {
+  previousTrash: TrashedPromptListItemData[];
+  trashQueryKey: QueryKey;
 };
 
 type PromptListItemRowProps = {
@@ -223,6 +244,90 @@ const PromptListItemRow = ({
   </li>
 );
 
+const mapPromptToListItemData = (prompt: Prompt): PromptListItemData => ({
+  ...prompt,
+  note: prompt.note ?? null,
+});
+
+const formatDateTime = (isoString: string) => {
+  try {
+    return new Date(isoString).toLocaleString();
+  } catch (error) {
+    console.error(error);
+    return isoString;
+  }
+};
+
+const formatQueryKey = (key: readonly unknown[]) =>
+  `[${key
+    .map((part) => (typeof part === 'string' ? `"${part}"` : String(part)))
+    .join(', ')}]`;
+
+type TrashedPromptListItemRowProps = {
+  prompt: TrashedPromptListItemData;
+  onRestore: (prompt: TrashedPromptListItemData) => void;
+  onPurge: (prompt: TrashedPromptListItemData) => void;
+  disableRestore: boolean;
+  disablePurge: boolean;
+};
+
+const TrashedPromptListItemRow = ({
+  prompt,
+  onRestore,
+  onPurge,
+  disableRestore,
+  disablePurge,
+}: TrashedPromptListItemRowProps) => (
+  <li key={prompt.id}>
+    <div className="space-y-3 rounded-lg border bg-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex flex-col gap-1">
+            <h3 className="text-sm font-semibold">{prompt.title}</h3>
+            <span className="text-xs text-muted-foreground">
+              Deleted {formatDateTime(prompt.deletedAt)}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onRestore(prompt)}
+            disabled={disableRestore}
+            aria-label={`Restore prompt ${prompt.title}`}
+          >
+            Restore
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={() => onPurge(prompt)}
+            disabled={disablePurge}
+            aria-label={`Delete prompt ${prompt.title} permanently`}
+          >
+            Delete permanently
+          </Button>
+        </div>
+      </div>
+      {prompt.note ? (
+        <p className="text-xs italic text-muted-foreground">Note: {prompt.note}</p>
+      ) : null}
+      {prompt.tags.length ? (
+        <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
+          {prompt.tags.map((tag) => (
+            <span key={tag} className="rounded bg-muted px-2 py-0.5">
+              #{tag}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  </li>
+);
+
 const formatTags = (raw: string | undefined) =>
   raw?.split(',')
     .map((tag) => tag.trim())
@@ -249,6 +354,9 @@ const normalizeSearchTags = (tags: string[]) => {
 
 const buildErrorMessage = (message?: string) =>
   `Failed to load prompts. ${message ?? 'Unknown error'}`;
+
+const buildTrashErrorMessage = (message?: string) =>
+  `Failed to load trash. ${message ?? 'Unknown error'}`;
 
 const PLAN_LIMIT_ERROR_CODE = 'P0001';
 
@@ -339,6 +447,9 @@ export const PromptsPage = () => {
   const [editorInitialThreadId, setEditorInitialThreadId] = React.useState<string | null>(null);
   const [editorInitialCommentId, setEditorInitialCommentId] = React.useState<string | null>(null);
   const [showFavoritesOnly, setShowFavoritesOnly] = React.useState(false);
+  const [listView, setListView] = React.useState<'active' | 'trash'>('active');
+  const [trashedPromptPendingPurge, setTrashedPromptPendingPurge] =
+    React.useState<TrashedPromptListItemData | null>(null);
 
   const workspaceId = activeWorkspace?.id ?? null;
   const workspaceType = activeWorkspace?.type ?? null;
@@ -353,11 +464,35 @@ export const PromptsPage = () => {
     () => promptFavoritesQueryKey(workspaceId && userId ? `${workspaceId}:${userId}` : null),
     [workspaceId, userId],
   );
+  const trashedPromptsKeyValue = React.useMemo(
+    () =>
+      workspaceId
+        ? trashedPromptsQueryKey(workspaceId)
+        : (['prompts', 'no-workspace', 'trash'] as const),
+    [workspaceId],
+  );
   const mentionNavigationHandledRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     setShowFavoritesOnly(false);
   }, [workspaceId]);
+
+  React.useEffect(() => {
+    setListView('active');
+  }, [workspaceId]);
+
+  React.useEffect(() => {
+    if (listView === 'trash') {
+      setShowFavoritesOnly(false);
+    }
+  }, [listView]);
+
+  const isTrashView = listView === 'trash';
+  const queryKeyLabel = React.useMemo(
+    () =>
+      `Query key: ${formatQueryKey(isTrashView ? trashedPromptsKeyValue : promptsKey)}`,
+    [isTrashView, trashedPromptsKeyValue, promptsKey],
+  );
 
   const promptsQuery = useQuery({
     queryKey: promptsKey,
@@ -366,6 +501,16 @@ export const PromptsPage = () => {
         ? fetchPrompts({ workspace: activeWorkspace })
         : Promise.reject(new Error('Workspace is required to fetch prompts.')),
     enabled: !!userId && !!workspaceId,
+    retry: false,
+  });
+
+  const trashedPromptsQuery = useQuery({
+    queryKey: trashedPromptsKeyValue,
+    queryFn: () =>
+      workspaceId
+        ? fetchTrashedPrompts({ workspaceId })
+        : Promise.reject(new Error('Workspace is required to fetch trashed prompts.')),
+    enabled: !!userId && !!workspaceId && isTrashView,
     retry: false,
   });
 
@@ -694,6 +839,118 @@ export const PromptsPage = () => {
     },
   });
 
+  const restorePromptMutation = useMutation<
+    Prompt,
+    Error | PostgrestError,
+    TrashedPromptListItemData,
+    RestoreOptimisticContext
+  >({
+    mutationFn: async (prompt) => restorePrompt({ promptId: prompt.id }),
+    onMutate: async (prompt) => {
+      if (!workspaceId) {
+        throw new Error('You must select a workspace before restoring prompts.');
+      }
+
+      const trashQueryKey = trashedPromptsQueryKey(workspaceId);
+      const activeQueryKey = promptsQueryKey(workspaceId);
+
+      await queryClient.cancelQueries({ queryKey: trashQueryKey });
+
+      const previousTrash =
+        queryClient.getQueryData<TrashedPromptListItemData[]>(trashQueryKey) ?? [];
+      const previousActive =
+        queryClient.getQueryData<PromptListItemData[]>(activeQueryKey) ?? [];
+
+      queryClient.setQueryData<TrashedPromptListItemData[]>(
+        trashQueryKey,
+        previousTrash.filter((item) => item.id !== prompt.id),
+      );
+
+      return { previousTrash, previousActive, trashQueryKey, activeQueryKey } satisfies RestoreOptimisticContext;
+    },
+    onError: (error, prompt, context) => {
+      if (context) {
+        queryClient.setQueryData(context.trashQueryKey, context.previousTrash);
+      }
+
+      toast({
+        title: 'Restore failed',
+        description:
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : `Unable to restore “${prompt.title}”. Please try again.`,
+      });
+    },
+    onSuccess: (restoredPrompt, prompt, context) => {
+      if (context) {
+        queryClient.setQueryData<PromptListItemData[]>(context.activeQueryKey, (current) => {
+          const base = current ?? context.previousActive;
+          const withoutRestored = base.filter((item) => item.id !== restoredPrompt.id);
+          return [mapPromptToListItemData(restoredPrompt), ...withoutRestored];
+        });
+      }
+
+      toast({
+        title: 'Prompt restored',
+        description: `“${prompt.title}” has been moved back to the workspace.`,
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: trashedPromptsKeyValue });
+      queryClient.invalidateQueries({ queryKey: promptsKey });
+    },
+  });
+
+  const purgePromptMutation = useMutation<
+    string,
+    Error | PostgrestError,
+    TrashedPromptListItemData,
+    PurgeOptimisticContext
+  >({
+    mutationFn: async (prompt) => purgePrompt({ promptId: prompt.id }),
+    onMutate: async (prompt) => {
+      if (!workspaceId) {
+        throw new Error('You must select a workspace before deleting prompts.');
+      }
+
+      const trashQueryKey = trashedPromptsQueryKey(workspaceId);
+
+      await queryClient.cancelQueries({ queryKey: trashQueryKey });
+
+      const previousTrash =
+        queryClient.getQueryData<TrashedPromptListItemData[]>(trashQueryKey) ?? [];
+
+      queryClient.setQueryData<TrashedPromptListItemData[]>(
+        trashQueryKey,
+        previousTrash.filter((item) => item.id !== prompt.id),
+      );
+
+      return { previousTrash, trashQueryKey } satisfies PurgeOptimisticContext;
+    },
+    onError: (error, prompt, context) => {
+      if (context) {
+        queryClient.setQueryData(context.trashQueryKey, context.previousTrash);
+      }
+
+      toast({
+        title: 'Permanent delete failed',
+        description:
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : `Unable to permanently delete “${prompt.title}”. Please try again.`,
+      });
+    },
+    onSuccess: (_id, prompt) => {
+      toast({
+        title: 'Prompt deleted permanently',
+        description: `“${prompt.title}” has been removed from trash.`,
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: trashedPromptsKeyValue });
+    },
+  });
+
   const handlePromptEditClick = (prompt: PromptListItemData) => {
     if (prompt.isOptimistic) {
       return;
@@ -807,6 +1064,15 @@ export const PromptsPage = () => {
     setPromptPendingDeletion(prompt);
   };
 
+  const handleTrashRestoreClick = (prompt: TrashedPromptListItemData) => {
+    restorePromptMutation.mutate(prompt);
+  };
+
+  const handleTrashPurgeClick = (prompt: TrashedPromptListItemData) => {
+    purgePromptMutation.reset();
+    setTrashedPromptPendingPurge(prompt);
+  };
+
   const handleDeleteDialogOpenChange = (open: boolean) => {
     if (open) {
       return;
@@ -820,6 +1086,19 @@ export const PromptsPage = () => {
     deletePromptMutation.reset();
   };
 
+  const handlePurgeDialogOpenChange = (open: boolean) => {
+    if (open) {
+      return;
+    }
+
+    if (purgePromptMutation.isPending) {
+      return;
+    }
+
+    setTrashedPromptPendingPurge(null);
+    purgePromptMutation.reset();
+  };
+
   const handleConfirmDelete = async () => {
     if (!promptPendingDeletion) {
       return;
@@ -828,6 +1107,21 @@ export const PromptsPage = () => {
     deletePromptMutation.reset();
     try {
       await deletePromptMutation.mutateAsync(promptPendingDeletion);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleConfirmPurge = async () => {
+    if (!trashedPromptPendingPurge) {
+      return;
+    }
+
+    purgePromptMutation.reset();
+
+    try {
+      await purgePromptMutation.mutateAsync(trashedPromptPendingPurge);
+      setTrashedPromptPendingPurge(null);
     } catch (error) {
       console.error(error);
     }
@@ -845,6 +1139,7 @@ export const PromptsPage = () => {
   const cachedPrompts = queryClient.getQueryData<PromptListItemData[]>(promptsKey) ?? [];
   const serverPrompts = (promptsQuery.data ?? []) as PromptListItemData[];
   const prompts = cachedPrompts.length ? cachedPrompts : serverPrompts;
+  const trashedPrompts = (trashedPromptsQuery.data ?? []) as TrashedPromptListItemData[];
   const promptIds = React.useMemo(() => prompts.map((prompt) => prompt.id), [prompts]);
   const promptIdsSignature = React.useMemo(() => promptIds.join(','), [promptIds]);
 
@@ -1168,7 +1463,7 @@ export const PromptsPage = () => {
     }
   });
 
-  const renderPrompts = () => {
+  const renderActivePrompts = () => {
     if (!userId) {
       return (
         <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
@@ -1266,12 +1561,68 @@ export const PromptsPage = () => {
     );
   };
 
+  const renderTrashPrompts = () => {
+    if (!userId) {
+      return (
+        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+          Sign in to manage your workspace prompts.
+        </div>
+      );
+    }
+
+    if (!workspaceId) {
+      return (
+        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+          No workspaces available. Create or join a workspace to manage prompts.
+        </div>
+      );
+    }
+
+    if (trashedPromptsQuery.status === 'pending' && trashedPrompts.length === 0) {
+      return <div className="rounded-md border border-dashed p-6 text-sm">Loading trash…</div>;
+    }
+
+    if (trashedPromptsQuery.status === 'error') {
+      return (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-6 text-sm text-destructive">
+          {buildTrashErrorMessage(trashedPromptsQuery.error?.message)}
+        </div>
+      );
+    }
+
+    if (trashedPrompts.length === 0) {
+      return (
+        <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+          Trash is empty. Deleted prompts will appear here for restoration or permanent deletion.
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        <ul className="space-y-3">
+          {trashedPrompts.map((prompt) => (
+            <TrashedPromptListItemRow
+              key={prompt.id}
+              prompt={prompt}
+              onRestore={handleTrashRestoreClick}
+              onPurge={handleTrashPurgeClick}
+              disableRestore={restorePromptMutation.isPending || purgePromptMutation.isPending}
+              disablePurge={purgePromptMutation.isPending || restorePromptMutation.isPending}
+            />
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
   const handleResetData = () => {
     queryClient.setQueryData<PromptListItemData[]>(promptsKey, []);
     setLastEvaluation(null);
     setUpgradeOpen(false);
     setCreatePromptError(null);
     setShowFavoritesOnly(false);
+    queryClient.setQueryData<TrashedPromptListItemData[]>(trashedPromptsKeyValue, []);
     if (workspaceId && userId) {
       queryClient.setQueryData<PromptFavoritesMap>(favoritesQueryKeyValue, {});
     }
@@ -1283,6 +1634,7 @@ export const PromptsPage = () => {
     setUpgradeOpen(false);
     setCreatePromptError(null);
     queryClient.invalidateQueries({ queryKey: promptsKey });
+    queryClient.invalidateQueries({ queryKey: trashedPromptsKeyValue });
     if (workspaceId && userId) {
       setShowFavoritesOnly(false);
       queryClient.invalidateQueries({ queryKey: favoritesQueryKeyValue });
@@ -1527,61 +1879,87 @@ export const PromptsPage = () => {
             ) : null}
           </div>
           <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3">
-            <span className="text-sm text-muted-foreground">
-              Query key: [{promptsKey[0]}, "{promptsKey[1]}"]
-            </span>
-            <Button
-              type="button"
-              variant={showFavoritesOnly ? 'default' : 'outline'}
-              size="sm"
-              aria-pressed={showFavoritesOnly}
-              onClick={() => setShowFavoritesOnly((previous) => !previous)}
-              disabled={prompts.length === 0}
-            >
-              {favoritesFilterLabel}
-            </Button>
+            <span className="text-sm text-muted-foreground">{queryKeyLabel}</span>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant={isTrashView ? 'outline' : 'default'}
+                size="sm"
+                aria-pressed={!isTrashView}
+                onClick={() => setListView('active')}
+              >
+                Prompts
+              </Button>
+              <Button
+                type="button"
+                variant={isTrashView ? 'default' : 'outline'}
+                size="sm"
+                aria-pressed={isTrashView}
+                onClick={() => setListView('trash')}
+                disabled={!workspaceId || !userId}
+              >
+                Trash
+              </Button>
+            </div>
+            {!isTrashView ? (
+              <Button
+                type="button"
+                variant={showFavoritesOnly ? 'default' : 'outline'}
+                size="sm"
+                aria-pressed={showFavoritesOnly}
+                onClick={() => setShowFavoritesOnly((previous) => !previous)}
+                disabled={prompts.length === 0}
+              >
+                {favoritesFilterLabel}
+              </Button>
+            ) : null}
           </div>
         </div>
-        <form onSubmit={handleFiltersSubmit} className="flex flex-col gap-3 rounded-md border bg-card/40 p-3 sm:flex-row sm:items-end">
-          <div className="flex-1 space-y-2">
-            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="prompts-search">
-              Search
-            </label>
-            <Input
-              id="prompts-search"
-              type="search"
-              placeholder="Search by title or tag"
-              {...filtersForm.register('q')}
-            />
-            {filtersForm.formState.errors.q ? (
-              <p className="text-xs text-destructive">{filtersForm.formState.errors.q.message}</p>
-            ) : null}
-          </div>
-          <div className="flex-1 space-y-2">
-            <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="prompts-tags">
-              Tags (comma separated)
-            </label>
-            <Input id="prompts-tags" placeholder="meeting, summary" {...filtersForm.register('tags')} />
-            {filtersForm.formState.errors.tags ? (
-              <p className="text-xs text-destructive">{filtersForm.formState.errors.tags.message}</p>
-            ) : null}
-          </div>
-          <div className="flex flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <Button type="submit" size="sm">
-              Apply filters
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleFiltersReset}
-              disabled={!hasSearchQuery && !hasTagFilters}
-            >
-              Clear filters
-            </Button>
-          </div>
-        </form>
-        {renderPrompts()}
+        {!isTrashView ? (
+          <form
+            onSubmit={handleFiltersSubmit}
+            className="flex flex-col gap-3 rounded-md border bg-card/40 p-3 sm:flex-row sm:items-end"
+          >
+            <div className="flex-1 space-y-2">
+              <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="prompts-search">
+                Search
+              </label>
+              <Input
+                id="prompts-search"
+                type="search"
+                placeholder="Search by title or tag"
+                {...filtersForm.register('q')}
+              />
+              {filtersForm.formState.errors.q ? (
+                <p className="text-xs text-destructive">{filtersForm.formState.errors.q.message}</p>
+              ) : null}
+            </div>
+            <div className="flex-1 space-y-2">
+              <label className="text-xs font-medium uppercase text-muted-foreground" htmlFor="prompts-tags">
+                Tags (comma separated)
+              </label>
+              <Input id="prompts-tags" placeholder="meeting, summary" {...filtersForm.register('tags')} />
+              {filtersForm.formState.errors.tags ? (
+                <p className="text-xs text-destructive">{filtersForm.formState.errors.tags.message}</p>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <Button type="submit" size="sm">
+                Apply filters
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleFiltersReset}
+                disabled={!hasSearchQuery && !hasTagFilters}
+              >
+                Clear filters
+              </Button>
+            </div>
+          </form>
+        ) : null}
+        {isTrashView ? renderTrashPrompts() : renderActivePrompts()}
       </div>
       </div>
 
@@ -1660,6 +2038,40 @@ export const PromptsPage = () => {
               disabled={deletePromptMutation.isPending}
             >
               {deletePromptMutation.isPending ? 'Deleting…' : 'Delete prompt'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!trashedPromptPendingPurge} onOpenChange={handlePurgeDialogOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete permanently</DialogTitle>
+            <DialogDescription>
+              Permanently delete “{trashedPromptPendingPurge?.title}”? This action cannot be undone and
+              will remove the prompt from trash.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            The prompt record will be deleted from the database. Make sure you no longer need this
+            template before confirming.
+          </p>
+          {purgePromptMutation.isError ? (
+            <p className="text-sm text-destructive">
+              {purgePromptMutation.error?.message ?? 'Failed to permanently delete the prompt. Please try again.'}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => handlePurgeDialogOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleConfirmPurge}
+              disabled={purgePromptMutation.isPending}
+            >
+              {purgePromptMutation.isPending ? 'Deleting…' : 'Delete permanently'}
             </Button>
           </DialogFooter>
         </DialogContent>

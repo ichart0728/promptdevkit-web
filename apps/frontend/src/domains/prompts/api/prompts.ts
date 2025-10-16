@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { Workspace } from '@/domains/workspaces/api/workspaces';
 
-type PromptRow = {
+export type PromptRow = {
   id: string;
   title: string;
   body: string;
@@ -17,7 +17,7 @@ export type Prompt = {
   note?: string | null;
 };
 
-const mapPromptRowToPrompt = (row: PromptRow): Prompt => ({
+export const mapPromptRowToPrompt = (row: PromptRow): Prompt => ({
   id: row.id,
   title: row.title,
   body: row.body,
