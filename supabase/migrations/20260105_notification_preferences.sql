@@ -34,20 +34,21 @@ SET search_path = public
 AS $$
 DECLARE
     v_user_id uuid := auth.uid();
+    v_result notification_preferences;
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'auth.uid() is required to set notification preferences'
             USING ERRCODE = 'P0001';
     END IF;
 
-    RETURN (
-        INSERT INTO public.notification_preferences AS np (user_id, allow_mentions)
-        VALUES (v_user_id, COALESCE(p_allow_mentions, true))
-        ON CONFLICT (user_id) DO UPDATE
-        SET allow_mentions = EXCLUDED.allow_mentions,
-            updated_at = timezone('utc', now())
-        RETURNING np.*
-    );
+    INSERT INTO public.notification_preferences AS np (user_id, allow_mentions)
+    VALUES (v_user_id, COALESCE(p_allow_mentions, true))
+    ON CONFLICT (user_id) DO UPDATE
+    SET allow_mentions = EXCLUDED.allow_mentions,
+        updated_at = timezone('utc', now())
+    RETURNING np.* INTO v_result;
+
+    RETURN v_result;
 END;
 $$;
 
