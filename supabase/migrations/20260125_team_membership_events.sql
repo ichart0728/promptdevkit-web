@@ -18,8 +18,8 @@ $$;
 CREATE TABLE IF NOT EXISTS public.team_membership_events (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     team_id uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
-    actor_user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
-    target_user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE RESTRICT,
+    actor_user_id uuid REFERENCES public.users(id) ON DELETE SET NULL,
+    target_user_id uuid REFERENCES public.users(id) ON DELETE SET NULL,
     event_type public.team_membership_event_type NOT NULL,
     previous_role public.team_member_role,
     new_role public.team_member_role,
