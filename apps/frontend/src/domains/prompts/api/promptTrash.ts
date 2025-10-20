@@ -28,6 +28,13 @@ const mapTrashRowToPrompt = (row: TrashedPromptRow): TrashedPrompt => ({
 export const trashedPromptsQueryKey = (workspaceId: string) =>
   ['prompts', workspaceId, 'trash'] as const;
 
+/**
+ * Mutation key for the bulk empty-trash RPC. Keeps workspace-specific requests
+ * isolated so concurrent mutations do not clobber each other's cache state.
+ */
+export const purgeWorkspacePromptTrashMutationKey = (workspaceId: string) =>
+  ['prompts', workspaceId, 'trash', 'purge'] as const;
+
 type TrashedPromptRow = {
   id: string;
   workspace_id: string;
@@ -107,4 +114,28 @@ export const purgePrompt = async ({ promptId }: PurgePromptParams): Promise<stri
   }
 
   return row.id;
+};
+
+type PurgeWorkspacePromptTrashParams = {
+  workspaceId: string;
+};
+
+/**
+ * Calls the `purge_workspace_prompt_trash` RPC and returns the number of
+ * prompts deleted for the workspace.
+ */
+export const purgeWorkspacePromptTrash = async ({
+  workspaceId,
+}: PurgeWorkspacePromptTrashParams): Promise<number> => {
+  const { data, error } = await supabase.rpc('purge_workspace_prompt_trash', {
+    p_workspace_id: workspaceId,
+  } as never);
+
+  if (error) {
+    throw error;
+  }
+
+  const deletedCount = data as number | null;
+
+  return deletedCount ?? 0;
 };

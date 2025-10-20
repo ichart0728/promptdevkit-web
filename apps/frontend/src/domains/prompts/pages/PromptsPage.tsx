@@ -38,6 +38,8 @@ import {
 import {
   fetchTrashedPrompts,
   purgePrompt,
+  purgeWorkspacePromptTrash,
+  purgeWorkspacePromptTrashMutationKey,
   restorePrompt,
   trashedPromptsQueryKey,
   type TrashedPrompt,
@@ -124,6 +126,11 @@ type RestoreOptimisticContext = {
 };
 
 type PurgeOptimisticContext = {
+  previousTrash: TrashedPromptListItemData[];
+  trashQueryKey: QueryKey;
+};
+
+type EmptyTrashOptimisticContext = {
   previousTrash: TrashedPromptListItemData[];
   trashQueryKey: QueryKey;
 };
@@ -450,6 +457,7 @@ export const PromptsPage = () => {
   const [listView, setListView] = React.useState<'active' | 'trash'>('active');
   const [trashedPromptPendingPurge, setTrashedPromptPendingPurge] =
     React.useState<TrashedPromptListItemData | null>(null);
+  const [emptyTrashDialogOpen, setEmptyTrashDialogOpen] = React.useState(false);
 
   const workspaceId = activeWorkspace?.id ?? null;
   const workspaceType = activeWorkspace?.type ?? null;
@@ -951,6 +959,63 @@ export const PromptsPage = () => {
     },
   });
 
+  const purgeWorkspaceTrashMutation = useMutation<
+    number,
+    Error | PostgrestError,
+    void,
+    EmptyTrashOptimisticContext
+  >({
+    mutationKey: workspaceId ? purgeWorkspacePromptTrashMutationKey(workspaceId) : undefined,
+    mutationFn: async () => {
+      if (!workspaceId) {
+        throw new Error('You must select a workspace before emptying trash.');
+      }
+
+      return purgeWorkspacePromptTrash({ workspaceId });
+    },
+    onMutate: async () => {
+      if (!workspaceId) {
+        throw new Error('You must select a workspace before emptying trash.');
+      }
+
+      const trashQueryKey = trashedPromptsQueryKey(workspaceId);
+
+      await queryClient.cancelQueries({ queryKey: trashQueryKey });
+
+      const previousTrash =
+        queryClient.getQueryData<TrashedPromptListItemData[]>(trashQueryKey) ?? [];
+
+      return { previousTrash, trashQueryKey } satisfies EmptyTrashOptimisticContext;
+    },
+    onError: (error, _variables, context) => {
+      if (context) {
+        queryClient.setQueryData(context.trashQueryKey, context.previousTrash);
+      }
+
+      toast({
+        title: 'Failed to empty trash',
+        description:
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : 'Unable to delete trashed prompts. Please try again.',
+      });
+    },
+    onSuccess: (deletedCount) => {
+      setEmptyTrashDialogOpen(false);
+
+      toast({
+        title: 'Trash emptied',
+        description:
+          deletedCount > 0
+            ? `${deletedCount} ${deletedCount === 1 ? 'prompt' : 'prompts'} deleted permanently.`
+            : 'No trashed prompts remained.',
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: trashedPromptsKeyValue });
+    },
+  });
+
   const handlePromptEditClick = (prompt: PromptListItemData) => {
     if (prompt.isOptimistic) {
       return;
@@ -1065,12 +1130,29 @@ export const PromptsPage = () => {
   };
 
   const handleTrashRestoreClick = (prompt: TrashedPromptListItemData) => {
+    if (purgeWorkspaceTrashMutation.isPending) {
+      return;
+    }
+
     restorePromptMutation.mutate(prompt);
   };
 
   const handleTrashPurgeClick = (prompt: TrashedPromptListItemData) => {
+    if (purgeWorkspaceTrashMutation.isPending) {
+      return;
+    }
+
     purgePromptMutation.reset();
     setTrashedPromptPendingPurge(prompt);
+  };
+
+  const handleEmptyTrashClick = () => {
+    if (!workspaceId) {
+      return;
+    }
+
+    purgeWorkspaceTrashMutation.reset();
+    setEmptyTrashDialogOpen(true);
   };
 
   const handleDeleteDialogOpenChange = (open: boolean) => {
@@ -1091,12 +1173,26 @@ export const PromptsPage = () => {
       return;
     }
 
-    if (purgePromptMutation.isPending) {
+    if (purgePromptMutation.isPending || purgeWorkspaceTrashMutation.isPending) {
       return;
     }
 
     setTrashedPromptPendingPurge(null);
     purgePromptMutation.reset();
+  };
+
+  const handleEmptyTrashDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setEmptyTrashDialogOpen(true);
+      return;
+    }
+
+    if (purgeWorkspaceTrashMutation.isPending) {
+      return;
+    }
+
+    setEmptyTrashDialogOpen(false);
+    purgeWorkspaceTrashMutation.reset();
   };
 
   const handleConfirmDelete = async () => {
@@ -1122,6 +1218,24 @@ export const PromptsPage = () => {
     try {
       await purgePromptMutation.mutateAsync(trashedPromptPendingPurge);
       setTrashedPromptPendingPurge(null);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleConfirmEmptyTrash = async () => {
+    if (!workspaceId) {
+      return;
+    }
+
+    if (purgeWorkspaceTrashMutation.isPending) {
+      return;
+    }
+
+    purgeWorkspaceTrashMutation.reset();
+
+    try {
+      await purgeWorkspaceTrashMutation.mutateAsync();
     } catch (error) {
       console.error(error);
     }
@@ -1598,8 +1712,24 @@ export const PromptsPage = () => {
       );
     }
 
+    const disableTrashActions =
+      restorePromptMutation.isPending ||
+      purgePromptMutation.isPending ||
+      purgeWorkspaceTrashMutation.isPending;
+
     return (
       <div className="space-y-3">
+        <div className="flex items-center justify-end">
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            onClick={handleEmptyTrashClick}
+            disabled={purgeWorkspaceTrashMutation.isPending}
+          >
+            {purgeWorkspaceTrashMutation.isPending ? 'Emptying…' : 'Empty trash'}
+          </Button>
+        </div>
         <ul className="space-y-3">
           {trashedPrompts.map((prompt) => (
             <TrashedPromptListItemRow
@@ -1607,8 +1737,8 @@ export const PromptsPage = () => {
               prompt={prompt}
               onRestore={handleTrashRestoreClick}
               onPurge={handleTrashPurgeClick}
-              disableRestore={restorePromptMutation.isPending || purgePromptMutation.isPending}
-              disablePurge={purgePromptMutation.isPending || restorePromptMutation.isPending}
+              disableRestore={disableTrashActions}
+              disablePurge={disableTrashActions}
             />
           ))}
         </ul>
@@ -2072,6 +2202,40 @@ export const PromptsPage = () => {
               disabled={purgePromptMutation.isPending}
             >
               {purgePromptMutation.isPending ? 'Deleting…' : 'Delete permanently'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={emptyTrashDialogOpen} onOpenChange={handleEmptyTrashDialogOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Empty trash</DialogTitle>
+            <DialogDescription>
+              Permanently delete all trashed prompts from this workspace? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            All prompts currently in trash will be removed immediately. Make sure you no longer need
+            any of them.
+          </p>
+          {purgeWorkspaceTrashMutation.isError ? (
+            <p className="text-sm text-destructive">
+              {purgeWorkspaceTrashMutation.error?.message ??
+                'Failed to empty trash. Please try again.'}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => handleEmptyTrashDialogOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleConfirmEmptyTrash}
+              disabled={purgeWorkspaceTrashMutation.isPending}
+            >
+              {purgeWorkspaceTrashMutation.isPending ? 'Emptying…' : 'Empty trash'}
             </Button>
           </DialogFooter>
         </DialogContent>
