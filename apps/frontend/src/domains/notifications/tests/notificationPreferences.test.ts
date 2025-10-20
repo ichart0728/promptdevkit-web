@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import {
+  DEFAULT_DIGEST_HOUR_UTC,
   fetchNotificationPreferences,
   updateNotificationPreferences,
   type NotificationPreferencesRow,
@@ -61,6 +62,8 @@ describe('notificationPreferences api', () => {
     const row: NotificationPreferencesRow = {
       user_id: 'user-123',
       allow_mentions: false,
+      digest_enabled: true,
+      digest_hour_utc: 14,
       updated_at: '2024-05-01T12:00:00.000Z',
     };
 
@@ -72,6 +75,8 @@ describe('notificationPreferences api', () => {
     expect(preferences).toEqual({
       userId: 'user-123',
       allowMentions: false,
+      digestEnabled: true,
+      digestHourUtc: 14,
       updatedAt: '2024-05-01T12:00:00.000Z',
       isDefault: false,
     });
@@ -85,6 +90,8 @@ describe('notificationPreferences api', () => {
     expect(preferences).toEqual({
       userId: 'user-456',
       allowMentions: true,
+      digestEnabled: false,
+      digestHourUtc: DEFAULT_DIGEST_HOUR_UTC,
       updatedAt: null,
       isDefault: true,
     });
@@ -101,19 +108,29 @@ describe('notificationPreferences api', () => {
     const row: NotificationPreferencesRow = {
       user_id: 'user-999',
       allow_mentions: true,
+      digest_enabled: false,
+      digest_hour_utc: 11,
       updated_at: '2024-06-01T08:30:00.000Z',
     };
 
     rpcMock.mockResolvedValue({ data: row, error: null });
 
-    const result = await updateNotificationPreferences({ allowMentions: true });
+    const result = await updateNotificationPreferences({
+      allowMentions: true,
+      digestEnabled: false,
+      digestHourUtc: 11,
+    });
 
     expect(rpcMock).toHaveBeenCalledWith('set_notification_preferences', {
       p_allow_mentions: true,
+      p_digest_enabled: false,
+      p_digest_hour_utc: 11,
     });
     expect(result).toEqual({
       userId: 'user-999',
       allowMentions: true,
+      digestEnabled: false,
+      digestHourUtc: 11,
       updatedAt: '2024-06-01T08:30:00.000Z',
       isDefault: false,
     });
@@ -123,7 +140,9 @@ describe('notificationPreferences api', () => {
     const error = new Error('rpc failed');
     rpcMock.mockResolvedValue({ data: null, error });
 
-    await expect(updateNotificationPreferences({ allowMentions: false })).rejects.toBe(
+    await expect(
+      updateNotificationPreferences({ allowMentions: false, digestEnabled: false, digestHourUtc: 9 }),
+    ).rejects.toBe(
       error,
     );
   });
@@ -131,8 +150,8 @@ describe('notificationPreferences api', () => {
   it('throws when the RPC does not return data', async () => {
     rpcMock.mockResolvedValue({ data: null, error: null });
 
-    await expect(updateNotificationPreferences({ allowMentions: true })).rejects.toThrow(
-      'Failed to update notification preferences.',
-    );
+    await expect(
+      updateNotificationPreferences({ allowMentions: true, digestEnabled: true, digestHourUtc: 10 }),
+    ).rejects.toThrow('Failed to update notification preferences.');
   });
 });

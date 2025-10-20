@@ -7,6 +7,7 @@ import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNo
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
 import { useNotificationPreferencesQuery } from '@/domains/notifications/hooks/useNotificationPreferencesQuery';
 import { useUpdateNotificationPreferencesMutation } from '@/domains/notifications/hooks/useUpdateNotificationPreferencesMutation';
+import { DEFAULT_DIGEST_HOUR_UTC } from '@/domains/notifications/api/notificationPreferences';
 import type { NotificationItem } from '@/domains/notifications/types';
 import {
   countUnreadNotifications,
@@ -39,6 +40,8 @@ type NotificationsMenuProps = {
   userId: string | null;
 };
 
+const formatDigestHour = (hour: number) => `${hour.toString().padStart(2, '0')}:00`;
+
 export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -68,6 +71,8 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
   const notifications = useMemo(() => flattenNotificationPages(data?.pages), [data?.pages]);
 
   const allowMentions = preferences?.allowMentions ?? true;
+  const digestEnabled = preferences?.digestEnabled ?? false;
+  const digestHourUtc = preferences?.digestHourUtc ?? DEFAULT_DIGEST_HOUR_UTC;
 
   const unreadCount = useMemo(() => countUnreadNotifications(notifications), [notifications]);
   const unreadMentionCount = useMemo(
@@ -325,10 +330,29 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
           <div className="border-t border-border px-4 py-3">
             <div className="flex flex-col gap-2">
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Mention alerts</p>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-foreground">Mention alerts</p>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                        digestEnabled
+                          ? 'border-transparent bg-secondary text-secondary-foreground'
+                          : 'border-border bg-muted text-muted-foreground'
+                      }`}
+                      data-testid="notifications-menu-digest-badge"
+                    >
+                      {digestEnabled
+                        ? `Digest ${formatDigestHour(digestHourUtc)} UTC`
+                        : 'Digest off'}
+                    </span>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {allowMentions ? 'Mentions are enabled.' : 'Mentions are muted.'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {digestEnabled
+                      ? 'Daily digests will include unread mentions at your chosen time.'
+                      : 'Daily digest emails are currently disabled.'}
                   </p>
                 </div>
                 <Button
@@ -341,7 +365,11 @@ export const NotificationsMenu = ({ userId }: NotificationsMenuProps) => {
                     isPreferencesError
                   }
                   onClick={() =>
-                    updatePreferencesMutation.mutate({ allowMentions: !allowMentions })
+                    updatePreferencesMutation.mutate({
+                      allowMentions: !allowMentions,
+                      digestEnabled,
+                      digestHourUtc,
+                    })
                   }
                 >
                   {updatePreferencesMutation.isPending

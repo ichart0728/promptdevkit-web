@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useId } from 'react';
+import { useForm } from 'react-hook-form';
 
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast';
@@ -8,6 +9,7 @@ import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNo
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
 import { useNotificationPreferencesQuery } from '@/domains/notifications/hooks/useNotificationPreferencesQuery';
 import { useUpdateNotificationPreferencesMutation } from '@/domains/notifications/hooks/useUpdateNotificationPreferencesMutation';
+import { DEFAULT_DIGEST_HOUR_UTC } from '@/domains/notifications/api/notificationPreferences';
 import type { NotificationItem } from '@/domains/notifications/types';
 import {
   countUnreadMentionNotifications,
@@ -20,6 +22,16 @@ import {
 } from '@/domains/notifications/utils';
 
 type NotificationFilter = 'all' | 'unread' | 'mentions';
+
+type NotificationPreferencesFormValues = {
+  allowMentions: boolean;
+  digestEnabled: boolean;
+  digestHourUtc: number;
+};
+
+const DIGEST_HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => hour);
+
+const formatDigestHour = (hour: number) => `${hour.toString().padStart(2, '0')}:00`;
 
 export const NotificationsPage = () => {
   const { data: session, isPending: isSessionPending } = useSessionQuery();
@@ -46,21 +58,55 @@ export const NotificationsPage = () => {
 
   const notifications = useMemo(() => flattenNotificationPages(data?.pages), [data?.pages]);
   const [filter, setFilter] = useState<NotificationFilter>('all');
-  const [allowMentions, setAllowMentions] = useState(true);
-  const preferenceAllowMentions = preferences?.allowMentions;
+  const {
+    handleSubmit,
+    register,
+    reset,
+    watch,
+    formState: { isDirty },
+  } = useForm<NotificationPreferencesFormValues>({
+    defaultValues: {
+      allowMentions: true,
+      digestEnabled: false,
+      digestHourUtc: DEFAULT_DIGEST_HOUR_UTC,
+    },
+  });
+
+  const allowMentions = watch('allowMentions');
+  const digestEnabled = watch('digestEnabled');
+  const digestHourUtc = watch('digestHourUtc');
+
+  const allowMentionsSwitchId = useId();
+  const digestEnabledSwitchId = useId();
+  const digestHourSelectId = useId();
 
   useEffect(() => {
-    if (typeof preferenceAllowMentions !== 'boolean') {
+    if (!preferences) {
       return;
     }
 
-    setAllowMentions(preferenceAllowMentions);
-  }, [preferenceAllowMentions]);
+    reset(
+      {
+        allowMentions: preferences.allowMentions,
+        digestEnabled: preferences.digestEnabled,
+        digestHourUtc: preferences.digestHourUtc,
+      },
+      { keepDirty: false },
+    );
+  }, [preferences, reset]);
 
-  const hasPreferenceChanges =
-    typeof preferenceAllowMentions === 'boolean'
-      ? allowMentions !== preferenceAllowMentions
-      : false;
+  const hasPreferenceChanges = !isPreferencesPending && isDirty;
+
+  const disablePreferencesFields = isPreferencesPending || updatePreferencesMutation.isPending;
+  const preferencesErrorMessage =
+    preferencesError instanceof Error
+      ? preferencesError.message
+      : 'Failed to load notification settings.';
+  const updatePreferencesErrorMessage =
+    updatePreferencesMutation.error instanceof Error
+      ? updatePreferencesMutation.error.message
+      : 'Failed to save notification settings.';
+  const showPreferencesSaved = updatePreferencesMutation.isSuccess && !hasPreferenceChanges;
 
   const unreadCount = useMemo(() => countUnreadNotifications(notifications), [notifications]);
   const unreadMentionsCount = useMemo(
@@ -115,16 +161,28 @@ export const NotificationsPage = () => {
     readMutation.mutate({ id: notificationId, read: !isRead });
   };
 
-  const handleSavePreferences = () => {
-    if (
-      isPreferencesPending ||
-      updatePreferencesMutation.isPending ||
-      typeof preferenceAllowMentions !== 'boolean'
-    ) {
+  const handleSavePreferences = handleSubmit((values) => {
+    if (isPreferencesPending || updatePreferencesMutation.isPending) {
       return;
     }
 
-    updatePreferencesMutation.mutate({ allowMentions });
+    updatePreferencesMutation.mutate(values);
+  });
+
+  const handleResetPreferences = () => {
+    if (!preferences) {
+      return;
+    }
+
+    reset(
+      {
+        allowMentions: preferences.allowMentions,
+        digestEnabled: preferences.digestEnabled,
+        digestHourUtc: preferences.digestHourUtc,
+      },
+      { keepDirty: false },
+    );
+    updatePreferencesMutation.reset();
   };
 
   const handleMarkAllAsRead = () => {
@@ -230,54 +288,113 @@ export const NotificationsPage = () => {
         </div>
       </div>
       <section className="rounded-lg border border-border bg-card p-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <form
+          className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+          onSubmit={handleSavePreferences}
+        >
           <div className="space-y-2">
             <h2 className="text-lg font-semibold text-foreground">Notification settings</h2>
             <p className="text-sm text-muted-foreground">
-              Choose how we notify you when someone mentions you.
+              Choose how we notify you when someone mentions you or send daily digests.
             </p>
             {isPreferencesError ? (
               <p className="text-sm text-destructive" role="alert">
-                {preferencesError instanceof Error
-                  ? preferencesError.message
-                  : 'Failed to load notification settings.'}
+                {preferencesErrorMessage}
               </p>
             ) : null}
             {updatePreferencesMutation.error ? (
               <p className="text-sm text-destructive" role="alert">
-                {updatePreferencesMutation.error instanceof Error
-                  ? updatePreferencesMutation.error.message
-                  : 'Failed to save notification settings.'}
+                {updatePreferencesErrorMessage}
               </p>
             ) : null}
-            {updatePreferencesMutation.isSuccess && !hasPreferenceChanges ? (
+            {showPreferencesSaved ? (
               <p className="text-xs text-muted-foreground" role="status">
                 Preferences saved.
               </p>
             ) : null}
           </div>
-          <div className="flex max-w-sm flex-col items-start gap-3 sm:items-end">
-            <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border border-border"
-                checked={allowMentions}
-                onChange={(event) => setAllowMentions(event.target.checked)}
-                disabled={isPreferencesPending || updatePreferencesMutation.isPending}
-              />
-              Allow mention notifications
-            </label>
-            <p className="text-xs text-muted-foreground">
-              {allowMentions
-                ? 'Receive alerts when teammates mention you. Turn this off to silence mention notifications.'
-                : 'Mentions will stop sending alerts, but you can still find them in the notifications list.'}
-            </p>
+          <div className="flex max-w-sm flex-col gap-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label
+                  className="flex items-center gap-3 text-sm font-medium text-foreground"
+                  htmlFor={allowMentionsSwitchId}
+                >
+                  <input
+                    {...register('allowMentions')}
+                    id={allowMentionsSwitchId}
+                    type="checkbox"
+                    className="peer sr-only"
+                    disabled={disablePreferencesFields}
+                    data-testid="mentions-preferences-toggle"
+                  />
+                  <span className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border border-border bg-muted transition peer-checked:border-primary peer-checked:bg-primary peer-disabled:cursor-not-allowed peer-disabled:opacity-60">
+                    <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-background transition-transform peer-checked:translate-x-5" />
+                  </span>
+                  Allow mention notifications
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {allowMentions
+                    ? 'Receive alerts when teammates mention you. Turn this off to silence mention notifications.'
+                    : 'Mentions will stop sending alerts, but you can still find them in the notifications list.'}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label
+                  className="flex items-center gap-3 text-sm font-medium text-foreground"
+                  htmlFor={digestEnabledSwitchId}
+                >
+                  <input
+                    {...register('digestEnabled')}
+                    id={digestEnabledSwitchId}
+                    type="checkbox"
+                    className="peer sr-only"
+                    disabled={disablePreferencesFields}
+                    data-testid="digest-preferences-toggle"
+                  />
+                  <span className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border border-border bg-muted transition peer-checked:border-primary peer-checked:bg-primary peer-disabled:cursor-not-allowed peer-disabled:opacity-60">
+                    <span className="absolute left-1 top-1 h-4 w-4 rounded-full bg-background transition-transform peer-checked:translate-x-5" />
+                  </span>
+                  Enable daily digest
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {digestEnabled
+                    ? `We'll send a summary around ${formatDigestHour(digestHourUtc)} UTC.`
+                    : 'Turn this on to receive a once-per-day email summary of mentions.'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <label
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                  htmlFor={digestHourSelectId}
+                >
+                  Digest delivery time (UTC)
+                </label>
+                <select
+                  {...register('digestHourUtc', { valueAsNumber: true })}
+                  id={digestHourSelectId}
+                  className="h-9 w-40 rounded-md border border-border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  data-testid="digest-hour-select"
+                  disabled={disablePreferencesFields || !digestEnabled}
+                >
+                  {DIGEST_HOUR_OPTIONS.map((hour) => (
+                    <option key={hour} value={hour}>
+                      {formatDigestHour(hour)}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  {digestEnabled
+                    ? 'Choose when the digest arrives in UTC.'
+                    : 'Enable the digest to pick a delivery time.'}
+                </p>
+              </div>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                type="button"
+                type="submit"
                 size="sm"
-                onClick={handleSavePreferences}
-                disabled={!hasPreferenceChanges || updatePreferencesMutation.isPending || isPreferencesPending}
+                disabled={!hasPreferenceChanges || disablePreferencesFields}
               >
                 {updatePreferencesMutation.isPending ? 'Saving…' : 'Save changes'}
               </Button>
@@ -286,11 +403,7 @@ export const NotificationsPage = () => {
                 size="sm"
                 variant="outline"
                 disabled={!hasPreferenceChanges || updatePreferencesMutation.isPending}
-                onClick={() => {
-                  if (typeof preferenceAllowMentions === 'boolean') {
-                    setAllowMentions(preferenceAllowMentions);
-                  }
-                }}
+                onClick={handleResetPreferences}
               >
                 Reset
               </Button>
@@ -306,7 +419,7 @@ export const NotificationsPage = () => {
               ) : null}
             </div>
           </div>
-        </div>
+        </form>
       </section>
       {readMutation.markAllError ? (
         <div className="rounded-md border border-destructive/60 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">

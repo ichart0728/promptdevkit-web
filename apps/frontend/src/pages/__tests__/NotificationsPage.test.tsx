@@ -7,6 +7,8 @@ import type { NotificationItem } from '@/domains/notifications/types';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
 import { useNotificationsQuery } from '@/domains/notifications/hooks/useNotificationsQuery';
 import { useNotificationReadMutation } from '@/domains/notifications/hooks/useNotificationReadMutation';
+import { useNotificationPreferencesQuery } from '@/domains/notifications/hooks/useNotificationPreferencesQuery';
+import { useUpdateNotificationPreferencesMutation } from '@/domains/notifications/hooks/useUpdateNotificationPreferencesMutation';
 import { router } from '@/app/router';
 
 vi.mock('@/lib/supabase', () => ({
@@ -28,6 +30,8 @@ vi.mock('@/lib/supabase', () => ({
 vi.mock('@/domains/auth/hooks/useSessionQuery');
 vi.mock('@/domains/notifications/hooks/useNotificationsQuery');
 vi.mock('@/domains/notifications/hooks/useNotificationReadMutation');
+vi.mock('@/domains/notifications/hooks/useNotificationPreferencesQuery');
+vi.mock('@/domains/notifications/hooks/useUpdateNotificationPreferencesMutation');
 vi.mock('@/components/common/toast', () => ({ toast: vi.fn() }));
 
 import { NotificationsPage } from '../notifications';
@@ -35,6 +39,10 @@ import { NotificationsPage } from '../notifications';
 const mockedUseSessionQuery = vi.mocked(useSessionQuery);
 const mockedUseNotificationsQuery = vi.mocked(useNotificationsQuery);
 const mockedUseNotificationReadMutation = vi.mocked(useNotificationReadMutation);
+const mockedUseNotificationPreferencesQuery = vi.mocked(useNotificationPreferencesQuery);
+const mockedUseUpdateNotificationPreferencesMutation = vi.mocked(
+  useUpdateNotificationPreferencesMutation,
+);
 
 class MockIntersectionObserver {
   callback: IntersectionObserverCallback;
@@ -141,6 +149,38 @@ const createMutationResult = (
     ...overrides,
   } as unknown as ReturnType<typeof useNotificationReadMutation>);
 
+const createPreferencesQueryResult = (
+  overrides: Partial<ReturnType<typeof useNotificationPreferencesQuery>> = {},
+): ReturnType<typeof useNotificationPreferencesQuery> =>
+  ({
+    data: {
+      userId: 'user-1',
+      allowMentions: true,
+      digestEnabled: false,
+      digestHourUtc: 9,
+      updatedAt: null,
+      isDefault: false,
+    },
+    error: null,
+    isError: false,
+    isPending: false,
+    refetch: vi.fn(),
+    ...overrides,
+  } as unknown as ReturnType<typeof useNotificationPreferencesQuery>);
+
+const createPreferencesMutationResult = (
+  overrides: Partial<ReturnType<typeof useUpdateNotificationPreferencesMutation>> = {},
+): ReturnType<typeof useUpdateNotificationPreferencesMutation> =>
+  ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    reset: vi.fn(),
+    isPending: false,
+    error: null,
+    isSuccess: false,
+    ...overrides,
+  } as unknown as ReturnType<typeof useUpdateNotificationPreferencesMutation>);
+
 describe('NotificationsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -150,6 +190,10 @@ describe('NotificationsPage', () => {
     } as unknown as ReturnType<typeof useSessionQuery>);
     mockedUseNotificationsQuery.mockReturnValue(createQueryResult());
     mockedUseNotificationReadMutation.mockReturnValue(createMutationResult());
+    mockedUseNotificationPreferencesQuery.mockReturnValue(createPreferencesQueryResult());
+    mockedUseUpdateNotificationPreferencesMutation.mockReturnValue(
+      createPreferencesMutationResult(),
+    );
     vi.spyOn(router, 'navigate').mockResolvedValue(
       undefined as Awaited<ReturnType<typeof router.navigate>>,
     );
@@ -191,6 +235,68 @@ describe('NotificationsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Mark all as read' }));
 
     expect(mutateAll).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves updated mention and digest preferences', async () => {
+    const user = userEvent.setup();
+    const mutatePreferences = vi.fn();
+
+    mockedUseUpdateNotificationPreferencesMutation.mockReturnValue(
+      createPreferencesMutationResult({ mutate: mutatePreferences }),
+    );
+
+    renderNotificationsPage();
+
+    await act(async () => {
+      await user.click(screen.getByLabelText('Enable daily digest'));
+      await user.selectOptions(screen.getByTestId('digest-hour-select'), '18');
+      await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    });
+
+    expect(mutatePreferences).toHaveBeenCalledWith({
+      allowMentions: true,
+      digestEnabled: true,
+      digestHourUtc: 18,
+    });
+  });
+
+  it('resets preference changes to the loaded values', async () => {
+    const user = userEvent.setup();
+    const mutatePreferences = vi.fn();
+    const resetMutation = vi.fn();
+
+    mockedUseNotificationPreferencesQuery.mockReturnValue(
+      createPreferencesQueryResult({
+        data: {
+          userId: 'user-1',
+          allowMentions: false,
+          digestEnabled: true,
+          digestHourUtc: 7,
+          updatedAt: null,
+          isDefault: false,
+        },
+      }),
+    );
+    mockedUseUpdateNotificationPreferencesMutation.mockReturnValue(
+      createPreferencesMutationResult({ mutate: mutatePreferences, reset: resetMutation }),
+    );
+
+    renderNotificationsPage();
+
+    await act(async () => {
+      await user.click(screen.getByLabelText('Allow mention notifications'));
+      await user.selectOptions(screen.getByTestId('digest-hour-select'), '12');
+    });
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Reset' }));
+    });
+
+    expect(resetMutation).toHaveBeenCalled();
+    expect(screen.getByLabelText('Allow mention notifications')).not.toBeChecked();
+    expect(screen.getByLabelText('Enable daily digest')).toBeChecked();
+    expect((screen.getByTestId('digest-hour-select') as HTMLSelectElement).value).toBe('7');
+    expect(mutatePreferences).not.toHaveBeenCalled();
   });
 
   it('marks only mention notifications as read when the filter is set to mentions', async () => {
