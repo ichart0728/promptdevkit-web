@@ -9,7 +9,13 @@ import type { Prompt } from '@/domains/prompts/api/prompts';
 import type { PromptEditorDialogProps } from '../components/PromptEditorDialog';
 import { PromptsPage } from './PromptsPage';
 import { fetchPrompts, createPrompt, deletePrompt, duplicatePrompt } from '@/domains/prompts/api/prompts';
-import { fetchTrashedPrompts, purgePrompt, restorePrompt } from '@/domains/prompts/api/promptTrash';
+import {
+  fetchTrashedPrompts,
+  purgePrompt,
+  purgeWorkspacePromptTrash,
+  restorePrompt,
+  trashedPromptsQueryKey,
+} from '@/domains/prompts/api/promptTrash';
 import { fetchPlanLimits, fetchUserPlanId } from '@/domains/prompts/api/planLimits';
 import { fetchPromptFavorite, togglePromptFavorite } from '@/domains/prompts/api/promptFavorites';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
@@ -46,9 +52,12 @@ vi.mock('@/domains/prompts/api/prompts', () => ({
 
 vi.mock('@/domains/prompts/api/promptTrash', () => ({
   trashedPromptsQueryKey: (workspaceId: string) => ['prompts', workspaceId, 'trash'] as const,
+  purgeWorkspacePromptTrashMutationKey: (workspaceId: string) =>
+    ['prompts', workspaceId, 'trash', 'purge'] as const,
   fetchTrashedPrompts: vi.fn(),
   restorePrompt: vi.fn(),
   purgePrompt: vi.fn(),
+  purgeWorkspacePromptTrash: vi.fn(),
 }));
 
 vi.mock('@/domains/prompts/api/planLimits', () => ({
@@ -92,6 +101,7 @@ const duplicatePromptMock = vi.mocked(duplicatePrompt);
 const fetchTrashedPromptsMock = vi.mocked(fetchTrashedPrompts);
 const restorePromptMock = vi.mocked(restorePrompt);
 const purgePromptMock = vi.mocked(purgePrompt);
+const purgeWorkspacePromptTrashMock = vi.mocked(purgeWorkspacePromptTrash);
 const fetchUserPlanIdMock = vi.mocked(fetchUserPlanId);
 const fetchPlanLimitsMock = vi.mocked(fetchPlanLimits);
 const fetchPromptFavoriteMock = vi.mocked(fetchPromptFavorite);
@@ -189,6 +199,7 @@ describe('PromptsPage', () => {
       note: null,
     });
     purgePromptMock.mockResolvedValue('prompt-1');
+    purgeWorkspacePromptTrashMock.mockResolvedValue(0);
     fetchPlanLimitsMock.mockResolvedValue({
       prompts_per_personal_ws: {
         key: 'prompts_per_personal_ws',
@@ -1180,7 +1191,9 @@ describe('PromptsPage workspace awareness', () => {
 
     await screen.findByText('Workspace prompts · Personal Space');
 
-    await user.click(screen.getByRole('button', { name: 'Trash' }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+    });
 
     await waitFor(() => {
       expect(fetchTrashedPromptsMock).toHaveBeenCalledWith({ workspaceId: personalWorkspace.id });
@@ -1191,11 +1204,44 @@ describe('PromptsPage workspace awareness', () => {
     expect(screen.getByText('Query key: ["prompts", "workspace-1", "trash"]')).toBeInTheDocument();
   });
 
+  it('shows the empty trash button only when trashed prompts are available', async () => {
+    const user = userEvent.setup();
+    fetchPromptsMock.mockResolvedValue([]);
+
+    const { queryClient } = renderPromptsPage();
+    const trashKey = trashedPromptsQueryKey(personalWorkspace.id);
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+    });
+
+    await act(async () => {
+      queryClient.setQueryData(trashKey, [trashedPromptFixture]);
+    });
+
+    expect(await screen.findByRole('button', { name: 'Empty trash' })).toBeInTheDocument();
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Prompts' }));
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+    });
+
+    await act(async () => {
+      queryClient.setQueryData(trashKey, []);
+    });
+
+    expect(
+      await screen.findByText(
+        'Trash is empty. Deleted prompts will appear here for restoration or permanent deletion.',
+      ),
+    ).toBeInTheDocument();
+
+    expect(screen.queryByRole('button', { name: 'Empty trash' })).not.toBeInTheDocument();
+  });
+
   it('restores a trashed prompt back to the active list', async () => {
     const user = userEvent.setup();
     fetchPromptsMock.mockResolvedValue([]);
-    fetchTrashedPromptsMock.mockResolvedValueOnce([trashedPromptFixture]);
-    fetchTrashedPromptsMock.mockResolvedValue([]);
     const restoredPrompt = {
       id: trashedPromptFixture.id,
       title: 'Restored from trash',
@@ -1205,9 +1251,16 @@ describe('PromptsPage workspace awareness', () => {
     } satisfies Prompt;
     restorePromptMock.mockResolvedValue(restoredPrompt);
 
-    renderPromptsPage();
+    const { queryClient } = renderPromptsPage();
+    const trashKey = trashedPromptsQueryKey(personalWorkspace.id);
 
-    await user.click(screen.getByRole('button', { name: 'Trash' }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+    });
+
+    await act(async () => {
+      queryClient.setQueryData(trashKey, [trashedPromptFixture]);
+    });
 
     const restoreButton = await screen.findByRole('button', {
       name: `Restore prompt ${trashedPromptFixture.title}`,
@@ -1217,10 +1270,6 @@ describe('PromptsPage workspace awareness', () => {
 
     await waitFor(() => {
       expect(restorePromptMock).toHaveBeenCalledWith({ promptId: trashedPromptFixture.id });
-    });
-
-    await waitFor(() => {
-      expect(fetchTrashedPromptsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
     expect(toastMock).toHaveBeenCalledWith(
@@ -1234,13 +1283,18 @@ describe('PromptsPage workspace awareness', () => {
   it('purges a trashed prompt after confirmation', async () => {
     const user = userEvent.setup();
     fetchPromptsMock.mockResolvedValue([]);
-    fetchTrashedPromptsMock.mockResolvedValueOnce([trashedPromptFixture]);
-    fetchTrashedPromptsMock.mockResolvedValue([]);
     purgePromptMock.mockResolvedValue(trashedPromptFixture.id);
 
-    renderPromptsPage();
+    const { queryClient } = renderPromptsPage();
+    const trashKey = trashedPromptsQueryKey(personalWorkspace.id);
 
-    await user.click(screen.getByRole('button', { name: 'Trash' }));
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+    });
+
+    await act(async () => {
+      queryClient.setQueryData(trashKey, [trashedPromptFixture]);
+    });
 
     const purgeButton = await screen.findByRole('button', {
       name: `Delete prompt ${trashedPromptFixture.title} permanently`,
@@ -1256,12 +1310,145 @@ describe('PromptsPage workspace awareness', () => {
       expect(purgePromptMock).toHaveBeenCalledWith({ promptId: trashedPromptFixture.id });
     });
 
-    await waitFor(() => {
-      expect(fetchTrashedPromptsMock).toHaveBeenCalledTimes(2);
-    });
-
     expect(toastMock).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Prompt deleted permanently' }),
     );
+  });
+
+  it('empties the trash after confirmation', async () => {
+    const user = userEvent.setup();
+    fetchPromptsMock.mockResolvedValue([]);
+    purgeWorkspacePromptTrashMock.mockResolvedValue(2);
+
+    const { queryClient } = renderPromptsPage();
+    const trashKey = trashedPromptsQueryKey(personalWorkspace.id);
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+    });
+
+    await act(async () => {
+      queryClient.setQueryData(trashKey, [trashedPromptFixture]);
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Empty trash' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Empty trash' });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Empty trash' }));
+
+    await waitFor(() => {
+      expect(purgeWorkspacePromptTrashMock).toHaveBeenCalledWith({
+        workspaceId: personalWorkspace.id,
+      });
+    });
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Trash emptied',
+        description: expect.stringContaining('2 prompts'),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Empty trash' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('displays an error message when emptying the trash fails', async () => {
+    const user = userEvent.setup();
+    fetchPromptsMock.mockResolvedValue([]);
+    purgeWorkspacePromptTrashMock.mockRejectedValueOnce(new Error('RPC failure'));
+
+    const { queryClient } = renderPromptsPage();
+    const trashKey = trashedPromptsQueryKey(personalWorkspace.id);
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+    });
+
+    await act(async () => {
+      queryClient.setQueryData(trashKey, [trashedPromptFixture]);
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Empty trash' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Empty trash' });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Empty trash' }));
+
+    await waitFor(() => {
+      expect(purgeWorkspacePromptTrashMock).toHaveBeenCalled();
+    });
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Failed to empty trash',
+        description: expect.stringContaining('RPC failure'),
+      }),
+    );
+
+    expect(within(dialog).getByText('RPC failure')).toBeInTheDocument();
+  });
+
+  it('disables individual trash actions while emptying trash', async () => {
+    const user = userEvent.setup();
+    fetchPromptsMock.mockResolvedValue([]);
+    let resolveEmptyTrash: (() => void) | null = null;
+
+    purgeWorkspacePromptTrashMock.mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          resolveEmptyTrash = () => resolve(0);
+        }),
+    );
+
+    const { queryClient } = renderPromptsPage();
+    const trashKey = trashedPromptsQueryKey(personalWorkspace.id);
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Trash' }));
+    });
+
+    await act(async () => {
+      queryClient.setQueryData(trashKey, [trashedPromptFixture]);
+    });
+
+    const restoreButton = await screen.findByRole('button', {
+      name: `Restore prompt ${trashedPromptFixture.title}`,
+    });
+    const purgeButton = await screen.findByRole('button', {
+      name: `Delete prompt ${trashedPromptFixture.title} permanently`,
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Empty trash' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Empty trash' });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Empty trash' }));
+
+    await waitFor(() => {
+      expect(purgeWorkspacePromptTrashMock).toHaveBeenCalled();
+    });
+
+    const disableButtons = await screen.findAllByRole('button', { name: 'Emptying…' });
+    disableButtons.forEach((button) => {
+      expect(button).toBeDisabled();
+    });
+
+    expect(restoreButton).toBeDisabled();
+    expect(purgeButton).toBeDisabled();
+
+    if (!resolveEmptyTrash) {
+      throw new Error('Expected resolveEmptyTrash to be defined');
+    }
+
+    await act(async () => {
+      resolveEmptyTrash?.();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Empty trash' })).not.toBeInTheDocument();
+    });
   });
 });
