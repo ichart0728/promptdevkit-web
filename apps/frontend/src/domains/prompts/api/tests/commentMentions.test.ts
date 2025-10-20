@@ -7,7 +7,12 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 vi.mock('@tanstack/react-query', () => {
-  const queryCache = new Map<string, unknown>();
+  type CacheEntry<TData> = {
+    promise: Promise<TData>;
+    controller: AbortController;
+  };
+
+  const queryCache = new Map<string, CacheEntry<unknown>>();
   const queryFnCallCount = new Map<string, number>();
 
   const toKey = (key: unknown) => JSON.stringify(key);
@@ -19,7 +24,7 @@ vi.mock('@tanstack/react-query', () => {
       enabled = true,
     }: {
       queryKey: unknown[];
-      queryFn: () => Promise<TData>;
+      queryFn: (context: { signal: AbortSignal }) => Promise<TData>;
       enabled?: boolean;
     }) => {
       const key = toKey(queryKey);
@@ -36,12 +41,20 @@ vi.mock('@tanstack/react-query', () => {
 
       if (!queryCache.has(key)) {
         queryFnCallCount.set(key, (queryFnCallCount.get(key) ?? 0) + 1);
-        const resultPromise = Promise.resolve().then(() => queryFn());
-        queryCache.set(key, resultPromise);
+
+        const controller = new AbortController();
+        const resultPromise = Promise.resolve().then(() => queryFn({ signal: controller.signal }));
+
+        queryCache.set(key, {
+          promise: resultPromise,
+          controller,
+        });
       }
 
+      const cacheEntry = queryCache.get(key) as CacheEntry<TData>;
+
       return {
-        data: queryCache.get(key) as Promise<TData>,
+        data: cacheEntry.promise,
         isFetching: false,
         isLoading: false,
         queryKey,
@@ -59,6 +72,10 @@ vi.mock('@tanstack/react-query', () => {
         useQuery.mockClear();
       },
       getCallCount: (queryKey: readonly unknown[]) => queryFnCallCount.get(toKey(queryKey)) ?? 0,
+      getSignal: (queryKey: readonly unknown[]) => {
+        const entry = queryCache.get(toKey(queryKey));
+        return entry?.controller.signal ?? null;
+      },
     },
   };
 });
@@ -69,6 +86,7 @@ import * as reactQueryModule from '@tanstack/react-query';
 import {
   commentMentionSuggestionsQueryKey,
   fetchCommentMentionSuggestions,
+  normalizeSearchTerm,
   type CommentMentionSuggestion,
 } from '../commentMentions';
 import * as commentMentionsApi from '../commentMentions';
@@ -80,8 +98,34 @@ const queryMockHelpers = (reactQueryModule as unknown as {
   __queryMock: {
     reset: () => void;
     getCallCount: (queryKey: readonly unknown[]) => number;
+    getSignal: (queryKey: readonly unknown[]) => AbortSignal | null;
   };
 }).__queryMock;
+
+type RpcRow = {
+  id: string;
+  name: string;
+  email: string;
+  avatar_url: string | null;
+};
+
+type RpcResponse = {
+  data: RpcRow[] | null;
+  error: ({ message: string; code?: string } & Record<string, unknown>) | null;
+};
+
+const createRpcResponse = (response: RpcResponse) => {
+  const promise = Promise.resolve(response) as Promise<RpcResponse> & {
+    abortSignal: Mock;
+  };
+
+  promise.abortSignal = vi.fn().mockReturnValue(promise);
+
+  return promise;
+};
+
+type RpcPromise = ReturnType<typeof createRpcResponse>;
+let lastRpcResponse: RpcPromise | null = null;
 
 describe('commentMentionSuggestionsQueryKey', () => {
   it('normalizes search term and limit for caching', () => {
@@ -105,9 +149,22 @@ describe('commentMentionSuggestionsQueryKey', () => {
   });
 });
 
+describe('normalizeSearchTerm', () => {
+  it('trims whitespace and lowercases the value', () => {
+    expect(normalizeSearchTerm('  Alice  ')).toBe('alice');
+  });
+
+  it('returns null when the input is empty or non-string', () => {
+    expect(normalizeSearchTerm('   ')).toBeNull();
+    expect(normalizeSearchTerm(undefined)).toBeNull();
+    expect(normalizeSearchTerm(null)).toBeNull();
+  });
+});
+
 describe('fetchCommentMentionSuggestions', () => {
   beforeEach(() => {
     supabaseRpcMock.mockReset();
+    lastRpcResponse = null;
   });
 
   it('calls the RPC with sanitized params and maps rows', async () => {
@@ -120,7 +177,10 @@ describe('fetchCommentMentionSuggestions', () => {
       },
     ];
 
-    supabaseRpcMock.mockResolvedValue({ data: rows, error: null });
+    supabaseRpcMock.mockImplementation(() => {
+      lastRpcResponse = createRpcResponse({ data: rows, error: null });
+      return lastRpcResponse;
+    });
 
     const result = await fetchCommentMentionSuggestions({
       workspaceId: 'workspace-1',
@@ -141,10 +201,16 @@ describe('fetchCommentMentionSuggestions', () => {
         avatarUrl: 'https://example.com/alice.png',
       },
     ]);
+
+    expect(lastRpcResponse?.abortSignal).toBeDefined();
+    expect(lastRpcResponse?.abortSignal.mock.calls).toHaveLength(0);
   });
 
   it('omits the search parameter when no term is provided', async () => {
-    supabaseRpcMock.mockResolvedValue({ data: null, error: null });
+    supabaseRpcMock.mockImplementation(() => {
+      lastRpcResponse = createRpcResponse({ data: null, error: null });
+      return lastRpcResponse;
+    });
 
     await fetchCommentMentionSuggestions({ workspaceId: 'workspace-1', search: '   ' });
 
@@ -156,11 +222,29 @@ describe('fetchCommentMentionSuggestions', () => {
 
   it('throws when the RPC returns an error', async () => {
     const error = { message: 'Permission denied', code: '42501' };
-    supabaseRpcMock.mockResolvedValue({ data: null, error });
+    supabaseRpcMock.mockImplementation(() => {
+      lastRpcResponse = createRpcResponse({ data: null, error });
+      return lastRpcResponse;
+    });
 
     await expect(
       fetchCommentMentionSuggestions({ workspaceId: 'workspace-1', search: 'bob' }),
     ).rejects.toEqual(error);
+  });
+
+  it('passes abort signals through to the Supabase client', async () => {
+    const controller = new AbortController();
+    supabaseRpcMock.mockImplementation(() => {
+      lastRpcResponse = createRpcResponse({ data: [], error: null });
+      return lastRpcResponse;
+    });
+
+    await fetchCommentMentionSuggestions(
+      { workspaceId: 'workspace-1', search: 'Alice' },
+      { signal: controller.signal },
+    );
+
+    expect(lastRpcResponse?.abortSignal).toHaveBeenCalledWith(controller.signal);
   });
 });
 
@@ -208,6 +292,7 @@ describe('useCommentMentionSuggestions', () => {
       }),
     );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
     expect(queryMockHelpers.getCallCount(expectedKey)).toBe(1);
 
     fetchSpy.mockRestore();
@@ -232,6 +317,30 @@ describe('useCommentMentionSuggestions', () => {
     expect(queryMockHelpers.getCallCount(keyWorkspace1Alice)).toBe(1);
     expect(queryMockHelpers.getCallCount(keyWorkspace2Alice)).toBe(1);
     expect(queryMockHelpers.getCallCount(keyWorkspace1Bob)).toBe(1);
+
+    fetchSpy.mockRestore();
+  });
+
+  it('reuses cached results without creating new abort signals', async () => {
+    const fetchSpy = vi
+      .spyOn(commentMentionsApi, 'fetchCommentMentionSuggestions')
+      .mockResolvedValue([]);
+
+    const params = { workspaceId: 'workspace-1', search: 'alice' };
+
+    useCommentMentionSuggestions(params);
+    await Promise.resolve();
+
+    const expectedKey = commentMentionSuggestionsQueryKey('workspace-1', 'alice', undefined);
+    const firstSignal = queryMockHelpers.getSignal(expectedKey);
+
+    useCommentMentionSuggestions(params);
+    await Promise.resolve();
+
+    const secondSignal = queryMockHelpers.getSignal(expectedKey);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(firstSignal).toBe(secondSignal);
 
     fetchSpy.mockRestore();
   });
