@@ -11,18 +11,27 @@ export const useUpdateNotificationPreferencesMutation = (userId: string | null) 
   const queryKey = notificationPreferencesQueryKey(userId);
 
   return useMutation({
+    mutationKey: [...queryKey, 'update'],
     mutationFn: async (params: UpdateNotificationPreferencesParams) => {
       if (!userId) {
         throw new Error('User ID is required to update notification preferences.');
       }
 
-      return updateNotificationPreferences(params);
+      try {
+        return await updateNotificationPreferences(params);
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error;
+        }
+
+        throw new Error('Failed to update notification preferences.');
+      }
     },
     onSuccess: (preferences) => {
       queryClient.setQueryData(queryKey, preferences);
     },
-    onSettled: () => {
-      if (userId) {
+    onSettled: (_result, error) => {
+      if (userId && !error) {
         void queryClient.invalidateQueries({ queryKey });
       }
     },
