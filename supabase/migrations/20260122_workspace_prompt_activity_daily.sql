@@ -17,3 +17,5 @@ GROUP BY
   w.id,
   w.name,
   (date_trunc('day', p.updated_at))::date;
+
+GRANT SELECT ON public.workspace_prompt_activity_daily TO authenticated;
