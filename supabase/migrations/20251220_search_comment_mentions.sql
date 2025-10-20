@@ -19,6 +19,7 @@ DECLARE
     v_workspace public.workspaces%ROWTYPE;
     v_limit integer := GREATEST(1, LEAST(COALESCE(p_limit, 20), 50));
     v_normalized_term text := NULL;
+    v_search_prefix text := NULL;
 BEGIN
     IF v_requester IS NULL THEN
         RAISE EXCEPTION 'Authentication required.'
@@ -53,10 +54,19 @@ BEGIN
     END IF;
 
     v_normalized_term := NULLIF(btrim(lower(COALESCE(p_search_term, ''))), '');
+    IF v_normalized_term IS NOT NULL THEN
+        v_search_prefix := v_normalized_term || '%';
+    END IF;
 
     RETURN QUERY
     WITH workspace_users AS (
-        SELECT u.id, u.name, u.email, u.avatar_url
+        SELECT
+            u.id,
+            u.name,
+            u.email,
+            u.avatar_url,
+            lower(u.name) AS name_lower,
+            lower(u.email) AS email_lower
         FROM public.users u
         WHERE
             (v_workspace.type = 'personal' AND u.id = v_workspace.owner_user_id)
@@ -74,17 +84,17 @@ BEGIN
            wu.avatar_url
     FROM workspace_users wu
     WHERE v_normalized_term IS NULL
-       OR lower(wu.name) LIKE v_normalized_term || '%'
-       OR lower(wu.email) LIKE v_normalized_term || '%'
+       OR wu.name_lower LIKE v_search_prefix
+       OR wu.email_lower LIKE v_search_prefix
     ORDER BY
         CASE
             WHEN v_normalized_term IS NULL THEN 0
-            WHEN lower(wu.name) LIKE v_normalized_term || '%' THEN 0
-            WHEN lower(wu.email) LIKE v_normalized_term || '%' THEN 1
+            WHEN wu.name_lower LIKE v_search_prefix THEN 0
+            WHEN wu.email_lower LIKE v_search_prefix THEN 1
             ELSE 2
         END,
-        lower(wu.name),
-        lower(wu.email)
+        wu.name_lower,
+        wu.email_lower
     LIMIT v_limit;
 END;
 $$;

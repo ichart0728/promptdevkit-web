@@ -24,7 +24,7 @@ export const useCommentMentionSuggestions = ({
 
   return useQuery<CommentMentionSuggestion[]>({
     queryKey: commentMentionSuggestionsQueryKey(normalizedWorkspaceId, search, limit),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!normalizedWorkspaceId) {
         return Promise.resolve<CommentMentionSuggestion[]>([]);
       }
@@ -33,7 +33,7 @@ export const useCommentMentionSuggestions = ({
         workspaceId: normalizedWorkspaceId,
         search,
         limit,
-      });
+      }, { signal });
     },
     enabled: isEnabled,
     staleTime: 30_000,
