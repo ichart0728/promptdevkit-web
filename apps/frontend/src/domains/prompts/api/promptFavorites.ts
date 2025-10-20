@@ -1,3 +1,4 @@
+import { queryOptions } from '@tanstack/react-query';
 import type { PostgrestError } from '@supabase/postgrest-js';
 
 import { PlanLimitError, type IntegerPlanLimitEvaluation } from '@/lib/limits';
@@ -102,6 +103,185 @@ export const togglePromptFavorite = async ({
 
   return null;
 };
+
+export type UserPromptFavorite = {
+  id: string;
+  userId: string;
+  promptId: string;
+  createdAt: string;
+  promptTitle: string;
+  promptBody: string;
+  promptNote: string | null;
+  promptTags: string[];
+  promptCreatedAt: string;
+  promptUpdatedAt: string;
+  workspaceId: string;
+  workspaceName: string;
+  workspaceType: 'personal' | 'team';
+  workspaceTeamId: string | null;
+  workspaceOwnerUserId: string | null;
+};
+
+type UserPromptFavoriteRow = {
+  id: string;
+  user_id: string;
+  prompt_id: string;
+  created_at: string;
+  prompt_title: string;
+  prompt_body: string;
+  prompt_note: string | null;
+  prompt_tags: string[] | null;
+  prompt_created_at: string;
+  prompt_updated_at: string;
+  workspace_id: string;
+  workspace_name: string;
+  workspace_type: 'personal' | 'team';
+  workspace_team_id: string | null;
+  workspace_owner_user_id: string | null;
+};
+
+const USER_PROMPT_FAVORITES_SELECT_COLUMNS =
+  [
+    'id',
+    'user_id',
+    'prompt_id',
+    'created_at',
+    'prompt_title',
+    'prompt_body',
+    'prompt_note',
+    'prompt_tags',
+    'prompt_created_at',
+    'prompt_updated_at',
+    'workspace_id',
+    'workspace_name',
+    'workspace_type',
+    'workspace_team_id',
+    'workspace_owner_user_id',
+  ].join(',');
+
+const mapUserPromptFavoriteRow = (row: UserPromptFavoriteRow): UserPromptFavorite => ({
+  id: row.id,
+  userId: row.user_id,
+  promptId: row.prompt_id,
+  createdAt: row.created_at,
+  promptTitle: row.prompt_title,
+  promptBody: row.prompt_body,
+  promptNote: row.prompt_note,
+  promptTags: row.prompt_tags ?? [],
+  promptCreatedAt: row.prompt_created_at,
+  promptUpdatedAt: row.prompt_updated_at,
+  workspaceId: row.workspace_id,
+  workspaceName: row.workspace_name,
+  workspaceType: row.workspace_type,
+  workspaceTeamId: row.workspace_team_id,
+  workspaceOwnerUserId: row.workspace_owner_user_id,
+});
+
+const normalizeFilterTags = (tags: string[] | undefined): string[] => {
+  if (!tags || tags.length === 0) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+
+  return tags
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .map((tag) => tag.toLowerCase())
+    .filter((tag) => {
+      if (seen.has(tag)) {
+        return false;
+      }
+
+      seen.add(tag);
+      return true;
+    })
+    .sort();
+};
+
+const escapeIlikePattern = (value: string) =>
+  value.replace(/[%_]/g, (match) => `\\${match}`);
+
+export type UserPromptFavoritesFilters = {
+  search?: string;
+  tags?: string[];
+};
+
+export const userPromptFavoritesQueryKey = (
+  userId: string | null,
+  filters: UserPromptFavoritesFilters = {},
+) => {
+  const normalizedSearch = filters.search?.trim().toLowerCase() ?? '';
+  const normalizedTags = normalizeFilterTags(filters.tags);
+
+  return ['user-prompt-favorites', userId ?? 'anonymous', { search: normalizedSearch, tags: normalizedTags }] as const;
+};
+
+export type FetchUserPromptFavoritesParams = {
+  userId: string;
+  search?: string;
+  tags?: string[];
+};
+
+export const fetchUserPromptFavorites = async ({
+  userId,
+  search,
+  tags,
+}: FetchUserPromptFavoritesParams): Promise<UserPromptFavorite[]> => {
+  if (!userId) {
+    throw new Error('User ID is required to fetch prompt favorites.');
+  }
+
+  const normalizedTags = normalizeFilterTags(tags);
+  const normalizedSearch = search?.trim() ?? '';
+
+  let query = supabase
+    .from('user_prompt_favorites')
+    .select(USER_PROMPT_FAVORITES_SELECT_COLUMNS)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (normalizedSearch) {
+    const pattern = `%${escapeIlikePattern(normalizedSearch)}%`;
+    query = query.ilike('prompt_title', pattern);
+  }
+
+  if (normalizedTags.length > 0) {
+    query = query.contains('prompt_tags', normalizedTags);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as UserPromptFavoriteRow[];
+
+  return rows.map(mapUserPromptFavoriteRow);
+};
+
+export const userPromptFavoritesQueryOptions = ({
+  userId,
+  search,
+  tags,
+}: {
+  userId: string | null;
+  search?: string;
+  tags?: string[];
+}) =>
+  queryOptions({
+    queryKey: userPromptFavoritesQueryKey(userId, { search, tags }),
+    queryFn: () => {
+      if (!userId) {
+        throw new Error('User ID is required to load favorites.');
+      }
+
+      return fetchUserPromptFavorites({ userId, search, tags });
+    },
+    enabled: !!userId,
+    staleTime: 60 * 1000,
+  });
 
 const PLAN_LIMIT_ERROR_CODE = 'P0001';
 const FAVORITES_PER_USER_LIMIT_KEY = 'favorites_per_user';

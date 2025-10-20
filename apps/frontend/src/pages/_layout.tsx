@@ -21,6 +21,7 @@ type NavigationItem = {
 const baseNavigation: NavigationItem[] = [
   { to: '/', label: 'Dashboard' },
   { to: '/prompts', label: 'Prompts' },
+  { to: '/favorites', label: 'Favorites' },
   { to: '/teams', label: 'Teams' },
 ];
 
