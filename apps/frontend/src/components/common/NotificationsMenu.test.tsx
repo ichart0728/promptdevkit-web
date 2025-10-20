@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { NotificationsMenu } from './NotificationsMenu';
@@ -79,6 +79,8 @@ const createPreferencesQueryResult = (
     data: {
       userId: '11111111-1111-4111-8111-111111111111',
       allowMentions: true,
+      digestEnabled: false,
+      digestHourUtc: 9,
       updatedAt: null,
       isDefault: false,
     },
@@ -244,6 +246,8 @@ describe('NotificationsMenu', () => {
         data: {
           userId: '11111111-1111-4111-8111-111111111111',
           allowMentions: true,
+          digestEnabled: false,
+          digestHourUtc: 9,
           updatedAt: null,
           isDefault: false,
         },
@@ -258,6 +262,36 @@ describe('NotificationsMenu', () => {
     await user.click(screen.getByRole('button', { name: 'Notifications' }));
     await user.click(screen.getByRole('button', { name: 'Turn off' }));
 
-    expect(mutatePreferences).toHaveBeenCalledWith({ allowMentions: false });
+    expect(mutatePreferences).toHaveBeenCalledWith({
+      allowMentions: false,
+      digestEnabled: false,
+      digestHourUtc: 9,
+    });
+  });
+
+  it('shows the digest badge state', async () => {
+    const user = userEvent.setup();
+    mockedUseNotificationPreferencesQuery.mockReturnValue(
+      createPreferencesQueryResult({
+        data: {
+          userId: '11111111-1111-4111-8111-111111111111',
+          allowMentions: true,
+          digestEnabled: true,
+          digestHourUtc: 15,
+          updatedAt: null,
+          isDefault: false,
+        },
+      }),
+    );
+
+    renderMenu();
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Notifications' }));
+    });
+
+    expect(screen.getByTestId('notifications-menu-digest-badge')).toHaveTextContent(
+      'Digest 15:00 UTC',
+    );
   });
 });
