@@ -389,6 +389,47 @@ exports[`TeamsPage > renders team membership and workspaces 1`] = `
             </ul>
           </section>
         </div>
+        <div
+          class="border-t px-6 py-5"
+        >
+          <section
+            aria-label="Prompt Builders membership activity"
+            class="space-y-3"
+          >
+            <h3
+              class="text-sm font-semibold uppercase text-muted-foreground"
+            >
+              Recent activity
+            </h3>
+            <ol
+              class="relative space-y-6 border-l border-muted-foreground/20 pl-6"
+              data-testid="team-activity-timeline"
+            >
+              <li
+                class="relative pl-4"
+              >
+                <span
+                  aria-hidden="true"
+                  class="absolute -left-[11px] top-1 h-2.5 w-2.5 rounded-full bg-primary ring-4 ring-background"
+                />
+                <div
+                  class="space-y-1"
+                >
+                  <p
+                    class="text-sm font-medium leading-snug"
+                  >
+                    Team Owner added Team Member as Editor
+                  </p>
+                  <p
+                    class="text-xs text-muted-foreground"
+                  >
+                    Jan 5, 2024, 9:06 AM
+                  </p>
+                </div>
+              </li>
+            </ol>
+          </section>
+        </div>
       </article>
     </div>
   </section>

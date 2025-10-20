@@ -61,6 +61,81 @@ SET
   role = EXCLUDED.role,
   joined_at = EXCLUDED.joined_at;
 
+-- membership activity
+DELETE FROM public.team_membership_events
+WHERE team_id = '71dfe7c0-6b18-4f1f-b8e2-1e4677a2af11'::uuid;
+
+INSERT INTO public.team_membership_events (
+  id,
+  team_id,
+  actor_user_id,
+  target_user_id,
+  event_type,
+  previous_role,
+  new_role,
+  occurred_at
+)
+VALUES
+  (
+    'e8de6c6a-05de-41d8-8c4c-4f86f617d110'::uuid,
+    '71dfe7c0-6b18-4f1f-b8e2-1e4677a2af11'::uuid,
+    '22222222-2222-4222-8222-222222222222'::uuid,
+    '33333333-3333-4333-8333-333333333333'::uuid,
+    'member_added'::team_membership_event_type,
+    NULL,
+    'viewer'::team_member_role,
+    '2024-01-05 09:06:15+00'::timestamptz
+  ),
+  (
+    '9d4a58d8-8a6d-4a2c-8710-47acb1e013a8'::uuid,
+    '71dfe7c0-6b18-4f1f-b8e2-1e4677a2af11'::uuid,
+    '22222222-2222-4222-8222-222222222222'::uuid,
+    '33333333-3333-4333-8333-333333333333'::uuid,
+    'member_role_updated'::team_membership_event_type,
+    'viewer'::team_member_role,
+    'editor'::team_member_role,
+    '2024-01-08 10:15:00+00'::timestamptz
+  ),
+  (
+    '6bc36b64-9b98-4c64-9122-5f4b1a9280a9'::uuid,
+    '71dfe7c0-6b18-4f1f-b8e2-1e4677a2af11'::uuid,
+    '22222222-2222-4222-8222-222222222222'::uuid,
+    '11111111-1111-4111-8111-111111111111'::uuid,
+    'member_added'::team_membership_event_type,
+    NULL,
+    'viewer'::team_member_role,
+    '2024-01-05 09:07:30+00'::timestamptz
+  ),
+  (
+    'e3f6e403-6a5a-4f2c-aac0-dc3e0d84c8f4'::uuid,
+    '71dfe7c0-6b18-4f1f-b8e2-1e4677a2af11'::uuid,
+    '22222222-2222-4222-8222-222222222222'::uuid,
+    '11111111-1111-4111-8111-111111111111'::uuid,
+    'member_removed'::team_membership_event_type,
+    'viewer'::team_member_role,
+    NULL,
+    '2024-01-20 12:00:00+00'::timestamptz
+  ),
+  (
+    '5f1c2aa6-972e-4d5b-9f7f-6a2ed538c46a'::uuid,
+    '71dfe7c0-6b18-4f1f-b8e2-1e4677a2af11'::uuid,
+    '22222222-2222-4222-8222-222222222222'::uuid,
+    '11111111-1111-4111-8111-111111111111'::uuid,
+    'member_added'::team_membership_event_type,
+    NULL,
+    'viewer'::team_member_role,
+    '2024-02-01 08:30:00+00'::timestamptz
+  )
+ON CONFLICT (id) DO UPDATE
+SET
+  team_id = EXCLUDED.team_id,
+  actor_user_id = EXCLUDED.actor_user_id,
+  target_user_id = EXCLUDED.target_user_id,
+  event_type = EXCLUDED.event_type,
+  previous_role = EXCLUDED.previous_role,
+  new_role = EXCLUDED.new_role,
+  occurred_at = EXCLUDED.occurred_at;
+
 WITH workspace_seed AS (
   SELECT * FROM (
     VALUES

@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 
-import type { Team } from '@/domains/teams/api/teams';
+import type { Team, TeamMembershipEvent } from '@/domains/teams/api/teams';
 import type { Workspace } from '@/domains/workspaces/api/workspaces';
 import { TeamsPage } from './teams';
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
@@ -17,6 +17,9 @@ const fetchPlanLimitsMock = vi.fn(async () => ({
 }));
 
 const fetchTeamsMock = vi.fn(async () => [] as Team[]);
+const fetchTeamMembershipEventsMock = vi.fn(
+  async (_teamId: string) => [] as TeamMembershipEvent[],
+);
 const fetchWorkspacesMock = vi.fn(async () => [] as Workspace[]);
 
 vi.mock('@/domains/teams/api/teams', () => ({
@@ -28,6 +31,11 @@ vi.mock('@/domains/teams/api/teams', () => ({
   fetchTeams: () => fetchTeamsMock(),
   updateTeamMemberRole: vi.fn(),
   removeTeamMember: vi.fn(),
+  teamMembershipEventsQueryOptions: (teamId: string) => ({
+    queryKey: ['team-membership-events', teamId] as const,
+    queryFn: () => fetchTeamMembershipEventsMock(teamId),
+    enabled: teamId.length > 0,
+  }),
 }));
 
 vi.mock('@/domains/workspaces/api/workspaces', () => ({
@@ -87,6 +95,7 @@ describe('TeamsPage', () => {
     vi.clearAllMocks();
     useSessionQueryMock.mockReturnValue(buildSessionQueryValue());
     fetchWorkspacesMock.mockResolvedValue([]);
+    fetchTeamMembershipEventsMock.mockResolvedValue([]);
     fetchPlanLimitsMock.mockResolvedValue({
       members_per_team: {
         key: 'members_per_team',
@@ -175,6 +184,28 @@ describe('TeamsPage', () => {
         archivedAt: null,
       },
     ]);
+    fetchTeamMembershipEventsMock.mockResolvedValue([
+      {
+        id: 'event-1',
+        teamId: 'team-1',
+        eventType: 'member_added',
+        occurredAt: '2024-01-05T09:06:15.000Z',
+        actor: {
+          id: '22222222-2222-4222-8222-222222222222',
+          email: 'team.owner@example.com',
+          name: 'Team Owner',
+          avatarUrl: null,
+        },
+        target: {
+          id: '33333333-3333-4333-8333-333333333333',
+          email: 'team.member@example.com',
+          name: 'Team Member',
+          avatarUrl: null,
+        },
+        previousRole: null,
+        newRole: 'editor',
+      },
+    ]);
 
     const { asFragment } = renderTeamsPage();
 
@@ -184,6 +215,10 @@ describe('TeamsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('This team is using 2 of 5 member seats.')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Team Owner added Team Member as Editor')).toBeInTheDocument();
     });
 
     expect(asFragment()).toMatchSnapshot();
