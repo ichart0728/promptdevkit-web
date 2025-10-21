@@ -191,6 +191,19 @@ WITH prompt_seed AS (
         NULL::timestamptz
       ),
       (
+        'c17e3a45-90ef-4e3b-9c48-6f307b1ef6b1'::uuid,
+        '0c93a3c6-7c5b-4f24-a413-2b142a4b6aaf'::uuid,
+        'Daily Reflection Template'::text,
+        'Guide teammates through a structured end-of-day reflection focused on wins and learnings.'::text,
+        'Use this to capture personal highlights and blockers for tomorrow.'::text,
+        ARRAY['reflection', 'daily']::text[],
+        '11111111-1111-4111-8111-111111111111'::uuid,
+        '11111111-1111-4111-8111-111111111111'::uuid,
+        '2024-03-20 18:00:00+00'::timestamptz,
+        '2024-03-25 09:30:00+00'::timestamptz,
+        NULL::timestamptz
+      ),
+      (
         'd2fd4052-6693-4aef-9f06-3c39b6f5ad93'::uuid,
         'c5b8f4d2-4d8c-4f2e-8f5d-199d6dbd6f90'::uuid,
         'Team Standup Template'::text,
@@ -228,6 +241,19 @@ WITH prompt_seed AS (
         '2024-01-12 14:00:00+00'::timestamptz,
         '2024-03-10 16:20:00+00'::timestamptz,
         '2024-03-18 08:30:00+00'::timestamptz
+      ),
+      (
+        '1c5a68f0-39a0-4e83-bc75-2b9e529c1b9d'::uuid,
+        'c5b8f4d2-4d8c-4f2e-8f5d-199d6dbd6f90'::uuid,
+        'Product Update Broadcast'::text,
+        'Share the latest product improvements with clear calls to action for customers.'::text,
+        'Announce new features with crisp benefit statements and roll-out plans.'::text,
+        ARRAY['team', 'announcement']::text[],
+        '22222222-2222-4222-8222-222222222222'::uuid,
+        '22222222-2222-4222-8222-222222222222'::uuid,
+        '2024-03-22 09:00:00+00'::timestamptz,
+        '2024-03-28 15:45:00+00'::timestamptz,
+        NULL::timestamptz
       )
   ) AS t(
     id,
