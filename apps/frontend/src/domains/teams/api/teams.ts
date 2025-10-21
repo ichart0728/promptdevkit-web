@@ -19,6 +19,33 @@ export type TeamMember = {
   } | null;
 };
 
+export type TeamMembershipEventType =
+  | 'member_added'
+  | 'member_role_updated'
+  | 'member_removed'
+  | 'member_left';
+
+export type TeamMembershipEvent = {
+  id: string;
+  teamId: string;
+  eventType: TeamMembershipEventType;
+  occurredAt: string;
+  actor: {
+    id: string;
+    email: string;
+    name: string | null;
+    avatarUrl: string | null;
+  } | null;
+  target: {
+    id: string;
+    email: string;
+    name: string | null;
+    avatarUrl: string | null;
+  } | null;
+  previousRole: TeamMemberRole | null;
+  newRole: TeamMemberRole | null;
+};
+
 export class TeamInviteUserNotFoundError extends Error {
   constructor(public readonly email: string) {
     super(`No user found with email: ${email}`);
@@ -47,6 +74,23 @@ type TeamMemberRow = {
   role: TeamMemberRole;
   joined_at: string;
   user: TeamMemberUserRow | null;
+};
+
+type TeamMembershipEventRow = {
+  id: string;
+  team_id: string;
+  event_type: TeamMembershipEventType;
+  occurred_at: string;
+  actor_user_id: string | null;
+  actor_email: string | null;
+  actor_name: string | null;
+  actor_avatar_url: string | null;
+  target_user_id: string | null;
+  target_email: string | null;
+  target_name: string | null;
+  target_avatar_url: string | null;
+  previous_role: TeamMemberRole | null;
+  new_role: TeamMemberRole | null;
 };
 
 type InviteTeamMemberRow = {
@@ -98,6 +142,31 @@ const mapMember = (row: TeamMemberRow): TeamMember => ({
         avatarUrl: row.user.avatar_url,
       }
     : null,
+});
+
+const mapMembershipEvent = (row: TeamMembershipEventRow): TeamMembershipEvent => ({
+  id: row.id,
+  teamId: row.team_id,
+  eventType: row.event_type,
+  occurredAt: row.occurred_at,
+  actor: row.actor_user_id
+    ? {
+        id: row.actor_user_id,
+        email: row.actor_email ?? '',
+        name: row.actor_name,
+        avatarUrl: row.actor_avatar_url,
+      }
+    : null,
+  target: row.target_user_id
+    ? {
+        id: row.target_user_id,
+        email: row.target_email ?? '',
+        name: row.target_name,
+        avatarUrl: row.target_avatar_url,
+      }
+    : null,
+  previousRole: row.previous_role,
+  newRole: row.new_role,
 });
 
 const mapRowToTeam = (row: TeamRow): Team => ({
@@ -208,6 +277,40 @@ export const fetchTeams = async (): Promise<Team[]> => {
 
   return rows.map(mapRowToTeam);
 };
+
+export const teamMembershipEventsQueryKey = (teamId: string) =>
+  ['team-membership-events', teamId] as const;
+
+export const fetchTeamMembershipEvents = async (
+  teamId: string,
+): Promise<TeamMembershipEvent[]> => {
+  const { data, error } = await supabase
+    .from('team_membership_event_feed')
+    .select(
+      `id,team_id,event_type,occurred_at,
+       actor_user_id,actor_email,actor_name,actor_avatar_url,
+       target_user_id,target_email,target_name,target_avatar_url,
+       previous_role,new_role`,
+    )
+    .eq('team_id', teamId)
+    .order('occurred_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = (data ?? []) as TeamMembershipEventRow[];
+
+  return rows.map(mapMembershipEvent);
+};
+
+export const teamMembershipEventsQueryOptions = (teamId: string) =>
+  queryOptions({
+    queryKey: teamMembershipEventsQueryKey(teamId),
+    queryFn: () => fetchTeamMembershipEvents(teamId),
+    enabled: teamId.length > 0,
+    staleTime: 30 * 1000,
+  });
 
 export const teamsQueryOptions = (userId: string | null) =>
   queryOptions({

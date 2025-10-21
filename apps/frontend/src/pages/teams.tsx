@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { useSessionQuery } from '@/domains/auth/hooks/useSessionQuery';
-import { teamsQueryOptions } from '@/domains/teams/api/teams';
+import { teamMembershipEventsQueryOptions, teamsQueryOptions } from '@/domains/teams/api/teams';
 import { TeamMemberActions } from '@/domains/teams/components/TeamMemberActions';
 import { TeamMemberListControls } from '@/domains/teams/components/TeamMemberListControls';
 import {
@@ -11,6 +11,7 @@ import {
 } from '@/domains/teams/components/team-member-filters';
 import { TeamInviteForm } from '@/domains/teams/components/TeamInviteForm';
 import { TeamPlanUsageBanner } from '@/domains/teams/components/TeamPlanUsageBanner';
+import { TeamActivityTimeline } from '@/domains/teams/components/TeamActivityTimeline';
 import { workspacesQueryOptions } from '@/domains/workspaces/api/workspaces';
 import type { Team } from '@/domains/teams/api/teams';
 
@@ -65,6 +66,16 @@ const TeamCard: React.FC<TeamCardProps> = ({
     () => filterTeamMembers(team.members, searchQuery, selectedRole),
     [team.members, searchQuery, selectedRole],
   );
+
+  const membershipEventsQuery = useQuery(teamMembershipEventsQueryOptions(team.id));
+  const isActivityLoading = membershipEventsQuery.status === 'pending';
+  const activityErrorMessage =
+    membershipEventsQuery.status === 'error'
+      ? membershipEventsQuery.error instanceof Error
+        ? membershipEventsQuery.error.message
+        : 'Please try again.'
+      : null;
+  const membershipEvents = membershipEventsQuery.data ?? [];
 
   return (
     <article className="rounded-lg border bg-card text-card-foreground shadow-sm">
@@ -141,6 +152,22 @@ const TeamCard: React.FC<TeamCardProps> = ({
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">No shared workspaces yet.</p>
+          )}
+        </section>
+      </div>
+      <div className="border-t px-6 py-5">
+        <section aria-label={`${team.name} membership activity`} className="space-y-3">
+          <h3 className="text-sm font-semibold uppercase text-muted-foreground">Recent activity</h3>
+          {isActivityLoading ? (
+            <p className="text-sm text-muted-foreground">Loading activity…</p>
+          ) : activityErrorMessage ? (
+            <p className="text-sm text-destructive">
+              Failed to load recent activity. {activityErrorMessage}
+            </p>
+          ) : membershipEvents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No membership changes recorded yet.</p>
+          ) : (
+            <TeamActivityTimeline events={membershipEvents} />
           )}
         </section>
       </div>
