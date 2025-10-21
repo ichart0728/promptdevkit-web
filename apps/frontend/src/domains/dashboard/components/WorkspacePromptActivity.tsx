@@ -7,18 +7,54 @@ import {
   type WorkspacePromptActivity,
 } from '../api/promptActivity';
 
-const formatDateForDisplay = (isoDate: string) => {
-  const parsed = new Date(isoDate);
+const parseDateOnly = (isoDate: string): Date | null => {
+  const [yearString, monthString, dayString] = isoDate.split('-');
 
-  if (Number.isNaN(parsed.getTime())) {
+  if (!yearString || !monthString || !dayString) {
+    return null;
+  }
+  const year = Number.parseInt(yearString, 10);
+  const month = Number.parseInt(monthString, 10);
+  const day = Number.parseInt(dayString, 10);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return null;
+  }
+
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const displayDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+const chartDateFormatter = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+
+const formatDateForDisplay = (isoDate: string) => {
+  const parsed = parseDateOnly(isoDate);
+
+  if (!parsed) {
     return isoDate;
   }
 
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(parsed);
+  return displayDateFormatter.format(parsed);
+};
+
+const formatDateForChartLabel = (isoDate: string) => {
+  const parsed = parseDateOnly(isoDate);
+
+  if (!parsed) {
+    return isoDate;
+  }
+
+  return chartDateFormatter.format(parsed);
 };
 
 type DailyTotal = {
@@ -36,7 +72,7 @@ const computeDailyTotals = (activity: WorkspacePromptActivity[]): DailyTotal[] =
   }
 
   return Array.from(totals.entries())
-    .sort(([dateA], [dateB]) => new Date(dateA).getTime() - new Date(dateB).getTime())
+    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
     .map(([date, totalCount]) => ({
       date,
       formattedDate: formatDateForDisplay(date),
@@ -72,7 +108,7 @@ const ActivityChart = ({ totals }: { totals: DailyTotal[] }) => {
                 />
               </div>
               <div className="text-center text-xs text-muted-foreground">
-                <div>{new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(point.date))}</div>
+                <div>{formatDateForChartLabel(point.date)}</div>
                 <div className="font-medium text-foreground">{point.totalCount}</div>
               </div>
             </div>
@@ -97,7 +133,7 @@ const ActivityTable = ({ activity }: { activity: WorkspacePromptActivity[] }) =>
   }
 
   const sortedActivity = [...activity].sort((a, b) => {
-    const dateComparison = new Date(b.activityDate).getTime() - new Date(a.activityDate).getTime();
+    const dateComparison = b.activityDate.localeCompare(a.activityDate);
 
     if (dateComparison !== 0) {
       return dateComparison;
