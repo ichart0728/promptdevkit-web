@@ -93,6 +93,9 @@ CREATE TRIGGER handle_comment_mentions
   FOR EACH ROW
   EXECUTE FUNCTION public.handle_comment_mentions();
 
+-- resolve_workspace_plan_id is provided in 20251109_bootstrap_plans_and_resolver.sql
+
+
 -- Regression test: ensure mention notifications respect notification_preferences.allow_mentions
 DO $$
 DECLARE

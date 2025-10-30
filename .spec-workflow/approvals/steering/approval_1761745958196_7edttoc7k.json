@@ -1,0 +1,39 @@
+{
+  "id": "approval_1761745958196_7edttoc7k",
+  "title": "Steering product document (JP) - Rev 2",
+  "filePath": ".spec-workflow/steering/product.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-29T13:52:38.196Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (2 comments):\n\nSpecific Text Comments:\n1. \"少人数チームや個人開発者でも MVP を素早くリリースできる土台を提供する。S\": MVPを素早くリリースしたいのは当該サービスを開発している私です。\n2. \"- 生成 AI プロダクトを提供する個人開発者〜小規模チーム\": 生成AIプロダクトを提供するチーム以外にも、生成AIツールを活用しているユーザーが対象です。\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"MVPを素早くリリースしたいのは当該サービスを開発している私です。\",\n      \"timestamp\": \"2025-10-29T13:53:48.496Z\",\n      \"selectedText\": \"少人数チームや個人開発者でも MVP を素早くリリースできる土台を提供する。S\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1761746028496_qmzddottv\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"生成AIプロダクトを提供するチーム以外にも、生成AIツールを活用しているユーザーが対象です。\",\n      \"timestamp\": \"2025-10-29T13:54:15.912Z\",\n      \"selectedText\": \"- 生成 AI プロダクトを提供する個人開発者〜小規模チーム\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1761746055912_e3bxnpp6r\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nSpecific Text Comments:\\n1. \\\"少人数チームや個人開発者でも MVP を素早くリリースできる土台を提供する。S\\\": MVPを素早くリリースしたいのは当該サービスを開発している私です。\\n2. \\\"- 生成 AI プロダクトを提供する個人開発者〜小規模チーム\\\": 生成AIプロダクトを提供するチーム以外にも、生成AIツールを活用しているユーザーが対象です。\\n\",\n  \"timestamp\": \"2025-10-29T13:54:31.395Z\"\n}",
+  "respondedAt": "2025-10-29T13:54:31.427Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "MVPを素早くリリースしたいのは当該サービスを開発している私です。",
+      "timestamp": "2025-10-29T13:53:48.496Z",
+      "selectedText": "少人数チームや個人開発者でも MVP を素早くリリースできる土台を提供する。S",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1761746028496_qmzddottv"
+    },
+    {
+      "type": "selection",
+      "comment": "生成AIプロダクトを提供するチーム以外にも、生成AIツールを活用しているユーザーが対象です。",
+      "timestamp": "2025-10-29T13:54:15.912Z",
+      "selectedText": "- 生成 AI プロダクトを提供する個人開発者〜小規模チーム",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1761746055912_e3bxnpp6r"
+    }
+  ]
+}

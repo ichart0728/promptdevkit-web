@@ -1,0 +1,39 @@
+{
+  "id": "approval_1761744126438_ma6v3p279",
+  "title": "Steering product document (JP) - Rev 2",
+  "filePath": ".spec-workflow/steering/product.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-29T13:22:06.438Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (2 comments):\n\nSpecific Text Comments:\n1. \"少人数チームや個人開発者でも MVP を素早くリリースできる土台を提供する\": MVPを素早くリリースしたいのは当該アプリの開発者である私です。\n前回のコメント内容はこのアプリ開発において、MVPを素早く実装してリリースしたいということです。\n2. \"生成 AI プロダクトを提供する個人開発者〜小規模チーム\": 生成AIプロダクトを提供するだけでなく、生成AIツールを使用している人たちもターゲットです。（むしろこっちがメイン？）\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"MVPを素早くリリースしたいのは当該アプリの開発者である私です。\\n前回のコメント内容はこのアプリ開発において、MVPを素早く実装してリリースしたいということです。\",\n      \"timestamp\": \"2025-10-29T13:26:34.477Z\",\n      \"selectedText\": \"少人数チームや個人開発者でも MVP を素早くリリースできる土台を提供する\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1761744394477_cgg25j8c1\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"生成AIプロダクトを提供するだけでなく、生成AIツールを使用している人たちもターゲットです。（むしろこっちがメイン？）\",\n      \"timestamp\": \"2025-10-29T13:27:40.284Z\",\n      \"selectedText\": \"生成 AI プロダクトを提供する個人開発者〜小規模チーム\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1761744460284_e6oyefbfl\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nSpecific Text Comments:\\n1. \\\"少人数チームや個人開発者でも MVP を素早くリリースできる土台を提供する\\\": MVPを素早くリリースしたいのは当該アプリの開発者である私です。\\n前回のコメント内容はこのアプリ開発において、MVPを素早く実装してリリースしたいということです。\\n2. \\\"生成 AI プロダクトを提供する個人開発者〜小規模チーム\\\": 生成AIプロダクトを提供するだけでなく、生成AIツールを使用している人たちもターゲットです。（むしろこっちがメイン？）\\n\",\n  \"timestamp\": \"2025-10-29T13:28:01.565Z\"\n}",
+  "respondedAt": "2025-10-29T13:28:01.577Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "MVPを素早くリリースしたいのは当該アプリの開発者である私です。\n前回のコメント内容はこのアプリ開発において、MVPを素早く実装してリリースしたいということです。",
+      "timestamp": "2025-10-29T13:26:34.477Z",
+      "selectedText": "少人数チームや個人開発者でも MVP を素早くリリースできる土台を提供する",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1761744394477_cgg25j8c1"
+    },
+    {
+      "type": "selection",
+      "comment": "生成AIプロダクトを提供するだけでなく、生成AIツールを使用している人たちもターゲットです。（むしろこっちがメイン？）",
+      "timestamp": "2025-10-29T13:27:40.284Z",
+      "selectedText": "生成 AI プロダクトを提供する個人開発者〜小規模チーム",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1761744460284_e6oyefbfl"
+    }
+  ]
+}

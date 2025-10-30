@@ -1,0 +1,1 @@
+Before finishing work, ensure `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm -C apps/frontend build` pass locally; run `pnpm e2e` for critical flows when relevant. Do not commit Supabase secrets or generated files; keep diffs small and focused on a single theme.
