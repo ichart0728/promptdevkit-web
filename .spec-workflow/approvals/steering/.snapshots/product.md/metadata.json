@@ -1,0 +1,54 @@
+{
+  "filePath": ".spec-workflow/steering/product.md",
+  "currentVersion": 6,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-29T13:17:09.132Z",
+      "trigger": "initial",
+      "approvalId": "approval_1761743829126_ltocgvnor",
+      "approvalTitle": "Steering product document (JP)"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-29T13:21:27.605Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1761743829126_ltocgvnor",
+      "approvalTitle": "Steering product document (JP)"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-10-29T13:28:01.574Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1761744126438_ma6v3p279",
+      "approvalTitle": "Steering product document (JP) - Rev 2"
+    },
+    {
+      "version": 4,
+      "filename": "snapshot-004.json",
+      "timestamp": "2025-10-29T13:54:31.422Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1761745958196_7edttoc7k",
+      "approvalTitle": "Steering product document (JP) - Rev 2"
+    },
+    {
+      "version": 5,
+      "filename": "snapshot-005.json",
+      "timestamp": "2025-10-29T14:11:29.046Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1761746873481_g6c2dl8zr",
+      "approvalTitle": "Steering product document (JP) - Rev 3"
+    },
+    {
+      "version": 6,
+      "filename": "snapshot-006.json",
+      "timestamp": "2025-10-29T14:24:32.768Z",
+      "trigger": "approved",
+      "approvalId": "approval_1761747780573_hu6lq59lm",
+      "approvalTitle": "Steering product document (JP) - Rev 4"
+    }
+  ]
+}

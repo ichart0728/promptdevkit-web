@@ -1,0 +1,21 @@
+{
+  "id": "approval_1761667727750_h0luillj7",
+  "title": "Requirements document for prompts-crud-module",
+  "filePath": ".spec-workflow/specs/prompts-crud-module/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-28T16:08:47.750Z",
+  "category": "spec",
+  "categoryName": "prompts-crud-module",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. 日本語で作成してください\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"日本語で作成してください\",\n      \"timestamp\": \"2025-10-28T16:31:28.939Z\",\n      \"id\": \"comment_1761669088939_qyv8cw8bj\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. 日本語で作成してください\\n\\n\",\n  \"timestamp\": \"2025-10-28T16:31:36.435Z\"\n}",
+  "respondedAt": "2025-10-28T16:31:36.446Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "日本語で作成してください",
+      "timestamp": "2025-10-28T16:31:28.939Z",
+      "id": "comment_1761669088939_qyv8cw8bj"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+- Favor Supabase BaaS primitives with RLS enforced in SQL; client never bypasses policies.
+- Fetch data via TanStack Query with reusable query keys defined at each module top-level.
+- Form DTOs use Zod and generated Supabase types (`supabase:types`) as the single source of truth.
+- TypeScript naming: camelCase for values/functions, PascalCase for components/types, files kebab-case.
+- Avoid destructive schema changes without migrations; never commit generated artifacts like `src/lib/types.ts` or build outputs.
+- Prefer explicit column selections and paginated queries over `select *`.

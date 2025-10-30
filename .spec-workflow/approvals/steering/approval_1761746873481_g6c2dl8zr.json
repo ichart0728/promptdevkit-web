@@ -1,0 +1,51 @@
+{
+  "id": "approval_1761746873481_g6c2dl8zr",
+  "title": "Steering product document (JP) - Rev 3",
+  "filePath": ".spec-workflow/steering/product.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-29T14:07:53.481Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (3 comments):\n\nSpecific Text Comments:\n1. \"のサービスを活用する個人開発者や小規模チームが自らのプロダクトを MVP まで最短でリリースできるよ...\": MVPのリリース支援ではなく、個人やチームでのプロンプト管理を対象としています。\n2. \"初回セットアップから MVP 公開までの時間を 1 日以内に短縮し、スピード感のある検証サイクルを支...\": ユーザーに対してMVP開発の短縮体験は提供するつもりないです。\n3. \"- 自身のサービス開発で迅速にプロンプトを検証し、MVP を公開したい個人開発者\": プロンプトの検証や管理は対象としますが、M VP公開については対象外です。\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"MVPのリリース支援ではなく、個人やチームでのプロンプト管理を対象としています。\",\n      \"timestamp\": \"2025-10-29T14:10:00.036Z\",\n      \"selectedText\": \"のサービスを活用する個人開発者や小規模チームが自らのプロダクトを MVP まで最短でリリースできるよう支援する。\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1761747000036_9w4ychp5g\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"ユーザーに対してMVP開発の短縮体験は提供するつもりないです。\",\n      \"timestamp\": \"2025-10-29T14:10:51.121Z\",\n      \"selectedText\": \"初回セットアップから MVP 公開までの時間を 1 日以内に短縮し、スピード感のある検証サイクルを支援する。\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1761747051121_tzpvaiuoy\"\n    },\n    {\n      \"type\": \"selection\",\n      \"comment\": \"プロンプトの検証や管理は対象としますが、M VP公開については対象外です。\",\n      \"timestamp\": \"2025-10-29T14:11:16.959Z\",\n      \"selectedText\": \"- 自身のサービス開発で迅速にプロンプトを検証し、MVP を公開したい個人開発者\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1761747076959_df4mrgcvf\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (3 comments):\\n\\nSpecific Text Comments:\\n1. \\\"のサービスを活用する個人開発者や小規模チームが自らのプロダクトを MVP まで最短でリリースできるよ...\\\": MVPのリリース支援ではなく、個人やチームでのプロンプト管理を対象としています。\\n2. \\\"初回セットアップから MVP 公開までの時間を 1 日以内に短縮し、スピード感のある検証サイクルを支...\\\": ユーザーに対してMVP開発の短縮体験は提供するつもりないです。\\n3. \\\"- 自身のサービス開発で迅速にプロンプトを検証し、MVP を公開したい個人開発者\\\": プロンプトの検証や管理は対象としますが、M VP公開については対象外です。\\n\",\n  \"timestamp\": \"2025-10-29T14:11:29.023Z\"\n}",
+  "respondedAt": "2025-10-29T14:11:29.048Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "MVPのリリース支援ではなく、個人やチームでのプロンプト管理を対象としています。",
+      "timestamp": "2025-10-29T14:10:00.036Z",
+      "selectedText": "のサービスを活用する個人開発者や小規模チームが自らのプロダクトを MVP まで最短でリリースできるよう支援する。",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1761747000036_9w4ychp5g"
+    },
+    {
+      "type": "selection",
+      "comment": "ユーザーに対してMVP開発の短縮体験は提供するつもりないです。",
+      "timestamp": "2025-10-29T14:10:51.121Z",
+      "selectedText": "初回セットアップから MVP 公開までの時間を 1 日以内に短縮し、スピード感のある検証サイクルを支援する。",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1761747051121_tzpvaiuoy"
+    },
+    {
+      "type": "selection",
+      "comment": "プロンプトの検証や管理は対象としますが、M VP公開については対象外です。",
+      "timestamp": "2025-10-29T14:11:16.959Z",
+      "selectedText": "- 自身のサービス開発で迅速にプロンプトを検証し、MVP を公開したい個人開発者",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1761747076959_df4mrgcvf"
+    }
+  ]
+}

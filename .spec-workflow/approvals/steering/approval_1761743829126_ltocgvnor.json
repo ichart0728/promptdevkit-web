@@ -1,0 +1,33 @@
+{
+  "id": "approval_1761743829126_ltocgvnor",
+  "title": "Steering product document (JP)",
+  "filePath": ".spec-workflow/steering/product.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-29T13:17:09.126Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (2 comments):\n\nGeneral Comments:\n1. 個人開発のため、MVPを実装して、なるべく早くリリースしたいです。スピード感を重視した開発とします。\n\nSpecific Text Comments:\n1. \"エンタープライズ契約の獲得率を向上させる。\": エンタープライズ契約は目指していません。あくまでも個人開発者や小規模チームを対象としています。\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"selection\",\n      \"comment\": \"エンタープライズ契約は目指していません。あくまでも個人開発者や小規模チームを対象としています。\",\n      \"timestamp\": \"2025-10-29T13:19:44.003Z\",\n      \"selectedText\": \"エンタープライズ契約の獲得率を向上させる。\",\n      \"highlightColor\": {\n        \"bg\": \"rgba(255, 235, 59, 0.3)\",\n        \"border\": \"#FFEB3B\",\n        \"name\": \"#ffeb3b\"\n      },\n      \"id\": \"comment_1761743984003_ul5eu6vc0\"\n    },\n    {\n      \"type\": \"general\",\n      \"comment\": \"個人開発のため、MVPを実装して、なるべく早くリリースしたいです。スピード感を重視した開発とします。\",\n      \"timestamp\": \"2025-10-29T13:21:24.286Z\",\n      \"id\": \"comment_1761744084286_guduj6280\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nGeneral Comments:\\n1. 個人開発のため、MVPを実装して、なるべく早くリリースしたいです。スピード感を重視した開発とします。\\n\\nSpecific Text Comments:\\n1. \\\"エンタープライズ契約の獲得率を向上させる。\\\": エンタープライズ契約は目指していません。あくまでも個人開発者や小規模チームを対象としています。\\n\",\n  \"timestamp\": \"2025-10-29T13:21:27.589Z\"\n}",
+  "respondedAt": "2025-10-29T13:21:27.608Z",
+  "comments": [
+    {
+      "type": "selection",
+      "comment": "エンタープライズ契約は目指していません。あくまでも個人開発者や小規模チームを対象としています。",
+      "timestamp": "2025-10-29T13:19:44.003Z",
+      "selectedText": "エンタープライズ契約の獲得率を向上させる。",
+      "highlightColor": {
+        "bg": "rgba(255, 235, 59, 0.3)",
+        "border": "#FFEB3B",
+        "name": "#ffeb3b"
+      },
+      "id": "comment_1761743984003_ul5eu6vc0"
+    },
+    {
+      "type": "general",
+      "comment": "個人開発のため、MVPを実装して、なるべく早くリリースしたいです。スピード感を重視した開発とします。",
+      "timestamp": "2025-10-29T13:21:24.286Z",
+      "id": "comment_1761744084286_guduj6280"
+    }
+  ]
+}

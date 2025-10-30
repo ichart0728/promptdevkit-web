@@ -1,0 +1,21 @@
+{
+  "id": "approval_1761668244864_y4gljcvzx",
+  "title": "Requirements document for auth-crud-module",
+  "filePath": ".spec-workflow/specs/auth-crud-module/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-28T16:17:24.864Z",
+  "category": "spec",
+  "categoryName": "auth-crud-module",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. 日本語で作成してください\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"日本語で作成してください\",\n      \"timestamp\": \"2025-10-28T16:32:16.997Z\",\n      \"id\": \"comment_1761669136997_cecuiy55y\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. 日本語で作成してください\\n\\n\",\n  \"timestamp\": \"2025-10-28T16:32:17.888Z\"\n}",
+  "respondedAt": "2025-10-28T16:32:17.894Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "日本語で作成してください",
+      "timestamp": "2025-10-28T16:32:16.997Z",
+      "id": "comment_1761669136997_cecuiy55y"
+    }
+  ]
+}

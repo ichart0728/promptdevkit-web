@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/prompts-crud-module/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-28T16:08:47.756Z",
+      "trigger": "initial",
+      "approvalId": "approval_1761667727750_h0luillj7",
+      "approvalTitle": "Requirements document for prompts-crud-module"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-28T16:31:36.444Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1761667727750_h0luillj7",
+      "approvalTitle": "Requirements document for prompts-crud-module"
+    }
+  ]
+}

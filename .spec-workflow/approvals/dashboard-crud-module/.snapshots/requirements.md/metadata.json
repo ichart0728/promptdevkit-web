@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/dashboard-crud-module/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-28T16:15:38.261Z",
+      "trigger": "initial",
+      "approvalId": "approval_1761668138253_4z0lhrcxi",
+      "approvalTitle": "Requirements document for dashboard-crud-module"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-28T16:32:12.626Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1761668138253_4z0lhrcxi",
+      "approvalTitle": "Requirements document for dashboard-crud-module"
+    }
+  ]
+}

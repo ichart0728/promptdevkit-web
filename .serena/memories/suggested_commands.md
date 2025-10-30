@@ -1,0 +1,9 @@
+- `pnpm i` – install workspace dependencies.
+- `supabase start` – start local Supabase stack (Docker).
+- `supabase db reset --seed` – run migrations plus seed scripts.
+- `pnpm supabase:types` – regenerate Supabase TypeScript types into `apps/frontend/src/lib/types.ts`.
+- `pnpm -C apps/frontend dev` – start the Vite frontend dev server.
+- `pnpm lint && pnpm typecheck` – run linting and typechecking.
+- `pnpm test` – run Vitest unit suite.
+- `pnpm e2e` – run Playwright end-to-end tests (when present).
+- `pnpm -C apps/frontend build` – create a production build of the frontend.

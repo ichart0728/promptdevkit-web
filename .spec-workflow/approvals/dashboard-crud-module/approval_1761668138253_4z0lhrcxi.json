@@ -1,0 +1,21 @@
+{
+  "id": "approval_1761668138253_4z0lhrcxi",
+  "title": "Requirements document for dashboard-crud-module",
+  "filePath": ".spec-workflow/specs/dashboard-crud-module/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-10-28T16:15:38.253Z",
+  "category": "spec",
+  "categoryName": "dashboard-crud-module",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. 日本語で作成してください\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"日本語で作成してください\",\n      \"timestamp\": \"2025-10-28T16:32:11.622Z\",\n      \"id\": \"comment_1761669131622_ff78mnnd0\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. 日本語で作成してください\\n\\n\",\n  \"timestamp\": \"2025-10-28T16:32:12.618Z\"\n}",
+  "respondedAt": "2025-10-28T16:32:12.628Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "日本語で作成してください",
+      "timestamp": "2025-10-28T16:32:11.622Z",
+      "id": "comment_1761669131622_ff78mnnd0"
+    }
+  ]
+}
