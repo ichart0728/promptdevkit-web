@@ -1,0 +1,46 @@
+{
+  "filePath": ".spec-workflow/steering/tech.md",
+  "currentVersion": 5,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-10-30T15:55:07.175Z",
+      "trigger": "initial",
+      "approvalId": "approval_1761839707156_y4dfa2t31",
+      "approvalTitle": "Steering Tech Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-10-30T15:55:47.745Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1761839707156_y4dfa2t31",
+      "approvalTitle": "Steering Tech Document"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-10-30T15:58:19.749Z",
+      "trigger": "approved",
+      "approvalId": "approval_1761839811108_j06ebrb1p",
+      "approvalTitle": "Steering Tech Document (JP)"
+    },
+    {
+      "version": 4,
+      "filename": "snapshot-004.json",
+      "timestamp": "2025-10-30T16:00:02.426Z",
+      "trigger": "approved",
+      "approvalId": "approval_1761839953640_k09te2qrm",
+      "approvalTitle": "Steering Tech Document (JP)"
+    },
+    {
+      "version": 5,
+      "filename": "snapshot-005.json",
+      "timestamp": "2025-10-30T16:00:52.232Z",
+      "trigger": "approved",
+      "approvalId": "approval_1761840041982_c6rw9g4t1",
+      "approvalTitle": "Steering Tech Document (JP)"
+    }
+  ]
+}

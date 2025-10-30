@@ -52,7 +52,7 @@
 # Example 1: Development setup with auto-started dashboard
 # ----------------------------------------------------------
 projectDir = "/Users/arataichikawa/Desktop/PromptDevKit/promptdevkit-web"
-autoStartDashboard = true
+# autoStartDashboard = true
 port = 8080
 
 # Example 2: Production MCP server without dashboard
